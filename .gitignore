@@ -1,0 +1,18 @@
+# NEVER commit firmware images — the stock image is the vendor's copyrighted work,
+# and a patched build is that image plus a few hundred bytes of ours.
+*.bin
+*.ota
+*.elf
+*.o
+*.hex
+
+# build artefacts
+firmware/shim.bin
+firmware/shim.elf
+firmware/shim.o
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
