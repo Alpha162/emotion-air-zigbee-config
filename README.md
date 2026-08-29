@@ -27,7 +27,7 @@ ConBee II coordinator and Home Assistant 2026.8.
 | Lux thresholds (bright / normal) | ✅ verified against the vendor app |
 | Radar frequency | ✅ command verified (meaning still unknown) |
 | Presence monitoring switch | ✅ verified on hardware |
-| Radar action buttons | Restart ✅ · Restore ✅ (vendor feature does nothing) · Learn room — fixed in v1.10, **untested** |
+| Radar action buttons | Restart ✅ · Restore ✅ (vendor feature does nothing) · Learn room ✅ (v1.10) |
 
 Every control except **Learn room** has been driven end-to-end and observed emitting the
 right command on the radar's UART:
@@ -138,7 +138,9 @@ settings, and along with the frequency control they are **disabled by default**.
 >
 > Fixed in **v1.10** (`case 0x05: return 1;`), with the pass count exposed as the
 > **Calibration passes** number (1–20, default 9 — the top of the range the firmware
-> formats inline). All other opcodes were re-checked against their handlers and have the
+> formats inline). Verified on hardware: setting passes to 3 and pressing the button
+> emitted `AT+CALI=3`, where earlier builds emitted nothing at all. A pass takes roughly
+> 22 seconds, so budget about `passes × 22 s` for a scan. All other opcodes were re-checked against their handlers and have the
 > right argument lengths.
 
 > **Upgrading?** HA keys each entity's enabled state to its `unique_id` and does not purge
@@ -207,6 +209,9 @@ data:
 The firmware appends CRLF and forwards it to the radar. There is deliberately **no entity** —
 a free-text command channel to the radar is not something to leave in the UI.
 
+Verified on hardware 2026-08-29: `AT+HW` sent this way appeared verbatim on the radar's
+UART.
+
 **The interesting use:** the radar has ten range gates at 0.7 m each with individual
 thresholds (`R1TH`–`R10TH`, plus `MR1TH`–`MR10TH` for moving targets). Raising the far ones
 is effectively *"stop detecting past 4 metres"* — the usual fix for a presence sensor that
@@ -237,6 +242,9 @@ flash. But "bricked beyond recovery" is genuinely hard to achieve here.
 ## What you need
 
 - An eMotion Air on **stock v1.1.9** (other versions: the offsets will differ — see below)
+- A way to flash it. Besides the two paths below, note the **vendor app's own manual
+  firmware update accepts our raw `.bin` without complaint** — no signature or provenance
+  check — which is by far the quickest way to iterate during development (~1 minute).
 - **Your own copy of the stock firmware image** — this repo ships none, see [FIRMWARE.md](FIRMWARE.md)
 - The **TC32 toolchain** to compile the shim:
   ```
