@@ -43,10 +43,11 @@ have not been exercised.
       The real environment-calibration scan (the app's "Start detection"): it
       rewrites the radar's per-range-gate thresholds based on what it can see, so
       run it with the room EMPTY and still. Measured: 19 thresholds changed.
-  "Reinitialise radar"              -> AT+INITTH  [disabled by default]
-      Acknowledged and restarts the radar, but measured to leave the per-gate
-      thresholds untouched — it neither learns nor restores. Effect unidentified;
-      the app's "Restore" is evidently something else.
+  "Restore calibration"             -> AT+INITTH  [disabled by default]
+      The vendor app's "Restore" — confirmed by pressing it in the app and seeing
+      an identical UART signature. MEASURED: it changes nothing. The per-gate
+      thresholds survive it unaltered, so the vendor's own restore does not appear
+      to work. Do NOT rely on it to undo a calibration scan.
   "Restart radar"                   -> AT+RESET            [disabled by default]
       One-shot actions. None is destructive, but the first two characterise
       whatever the radar can see AT THAT MOMENT, so run them with the room empty
@@ -499,10 +500,14 @@ MIN_PATCHED_FW = 0x101A3001
         initially_disabled=True,
         entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_relearn_environment",
-        # AT+INITTH. MEASURED 2026-08-29: the radar acknowledges it (AT+OK) and
-        # restarts, but the per-gate thresholds are UNCHANGED across two restarts —
-        # so it neither learns nor restores. Its actual effect is unidentified.
-        fallback_name="Reinitialise radar",
+        # AT+INITTH = the vendor app's "Restore". Identified by pressing Restore in
+        # the app and observing an identical signature on the radar UART
+        # (STOP / AT+OK / restart) with identical results.
+        # MEASURED 2026-08-29: it changes NOTHING. The per-gate thresholds survive it
+        # unaltered across restarts, so the vendor's own "clears the environment
+        # calibration and restores defaults" does not appear to work on this radar
+        # firmware. Exposed for completeness; do not rely on it to undo a scan.
+        fallback_name="Restore calibration",
     )
     .write_attr_button(
         EmotionAirOccupancyCluster.AttributeDefs.radar_calibrate.name,

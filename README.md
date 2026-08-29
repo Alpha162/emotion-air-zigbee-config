@@ -47,7 +47,7 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 | Light normal / Light bright | one `AT` command | The lux boundaries the device reports against. **Both are set by a single command**, so the quirk composes the pair. Bright 11–60000 lx, normal below it. (The vendor app's bright slider runs to 60000 lx with no text entry, which makes precise values nearly impossible — the ranges here are the same but typeable.) |
 | Presence monitoring (switch) | on `AT+RESET` / off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
 | Radar frequency | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default. Probably an RF channel; see below |
-| Reinitialise radar | `AT+INITTH` | Acknowledged, restarts the radar, but **measured to change nothing** — effect unidentified |
+| Restore calibration | `AT+INITTH` | The app's "Restore". **Measured to change nothing** — see below. Do not rely on it to undo a scan |
 | Learn room (room empty) | `AT+CALI` | **The environment-calibration scan.** Rewrites the per-gate thresholds from what it can see — **run with the room empty and still** |
 | Restart radar | `AT+RESET` | Harmless; also re-enables presence monitoring |
 
@@ -98,8 +98,16 @@ settings, and along with the frequency control they are **disabled by default**.
 >   environment-shaped profile (`10,10,6,6…`). This is the real calibration scan, and the
 >   vendor app's "Start detection".
 > - **`AT+INITTH`** is acknowledged (`AT+OK`) and restarts the radar, but left every
->   threshold **unchanged** across two restarts. It neither learns nor restores, and its
->   actual purpose is unidentified — so the app's "Restore" must map to something else.
+>   threshold **unchanged** across two restarts.
+>
+> Pressing **Restore** in the vendor app produced an identical UART signature and identical
+> (non-)results, which identifies `AT+INITTH` as that button — **and shows the vendor's own
+> restore does not work.** It is described as clearing the per-area calibration and
+> restoring defaults; measurably, it does neither.
+>
+> **Consequence: there is no working undo for a calibration scan** short of a factory
+> reset. If you run one, run it with the sensor mounted where it will live and the room
+> empty — you cannot simply put it back.
 >
 > Because `AT+CALI` characterises whatever the radar can see at that instant, run it with
 > the room empty and still, or you will teach it that you are background.
