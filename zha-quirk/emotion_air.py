@@ -99,6 +99,7 @@ MODEL = "eMotion Air"
 
 # Firmware defaults (FUN_00005c74), matching the native app's Configuration screen:
 #   no-motion 3 min, light interval 30 s, temp/humidity 60 s, lux 10 / 100
+CALIBRATION_PASSES_DEFAULT = 9   # top of the firmware's single-digit path
 LUX_LOW_DEFAULT = 10
 LUX_HIGH_DEFAULT = 100
 
@@ -145,7 +146,7 @@ def _snap_level(raw: int) -> int:
 # and THEN answers UNSUPPORTED_ATTRIBUTE, because they are not in its registered
 # attribute table. See "Known issue" in the README.
 SHIM_HANDLED = {0x0010, 0x0012, 0xF001, 0xF002, 0xF005,
-                0xF006, 0xF007, 0xF013, 0xF014, 0xF015}
+                0xF006, 0xF007, 0xF013, 0xF014, 0xF015, 0xF0FF}
 
 
 class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
@@ -207,6 +208,35 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
         # translated to pir_u_to_o_threshold below, reads snap to the nearest band.
         sensitivity_level = ZCLAttributeDef(
             id=0xFF04, type=SensitivityLevel, access="rw", mandatory=False
+        )
+        # How many passes a calibration scan runs (1-20). Virtual: held here and
+        # supplied as the argument when a calibration is started.
+        calibration_passes = ZCLAttributeDef(
+            id=0xFF05, type=t.uint8_t, access="rw", mandatory=False
+        )
+        # Virtual trigger: the button writes this, and we turn it into a write of
+        # radar_calibrate carrying the pass count above.
+        start_calibration = ZCLAttributeDef(
+            id=0xFF06, type=t.uint8_t, access="w", mandatory=False
+        )
+        # Raw AT passthrough (firmware v1.10+). Declared so zigpy will send it, but
+        # given no entity on purpose — a free-text command channel to the radar is
+        # not something to leave lying around in the UI. Drive it deliberately:
+        #
+        #   action: zha.set_zigbee_cluster_attribute
+        #   data:
+        #     ieee: <device ieee>
+        #     endpoint_id: 1
+        #     cluster_id: 0x0406
+        #     attribute: 0xF0FF
+        #     value: "AT+R8TH=20"
+        #
+        # The firmware appends CRLF and refuses anything containing "BAUD" (that one
+        # would permanently cut the link to the radar). Everything else in the
+        # radar's 58-command vocabulary is reachable — notably the per-range-gate
+        # thresholds R1TH..R10TH / MR1TH..MR10TH, i.e. per-distance sensitivity.
+        raw_at_command = ZCLAttributeDef(
+            id=0xF0FF, type=t.CharacterString, access="w", mandatory=False
         )
 
         # --- read-only views onto the live config block (firmware v1.9+) --------
@@ -321,9 +351,23 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
         low = take("lux_threshold_low", 0xFF01)
         high = take("lux_threshold_high", 0xFF02)
         presence = take("presence_monitoring", 0xFF03)
+        passes_set = take("calibration_passes", 0xFF05)
+        if passes_set is not None:          # purely local; nothing to transmit
+            self._update_attribute(0xFF05, int(passes_set))
         level = take("sensitivity_level", 0xFF04)
+        start_cal = take("start_calibration", 0xFF06)
 
         result = None
+
+        if start_cal is not None:
+            # cmd_05 takes the pass count as its argument; use whatever the
+            # "Calibration passes" number is set to, defaulting to 9 (the top of
+            # the single-digit range the firmware formats inline).
+            passes = int(self._attr_cache.get(0xFF05, CALIBRATION_PASSES_DEFAULT))
+            if passes < 1 or passes > 20:
+                passes = CALIBRATION_PASSES_DEFAULT
+            result = await self._write(
+                {"radar_calibrate": passes}, manufacturer=manufacturer, **kwargs)
 
         if level is not None:
             # the select is just a friendly face on the raw threshold
@@ -509,8 +553,22 @@ MIN_PATCHED_FW = 0x101A3001
         # firmware. Exposed for completeness; do not rely on it to undo a scan.
         fallback_name="Restore calibration",
     )
+    .number(
+        EmotionAirOccupancyCluster.AttributeDefs.calibration_passes.name,
+        EmotionAirOccupancyCluster.cluster_id,
+        min_value=1,
+        max_value=20,
+        step=1,
+        initially_disabled=True,
+        entity_type=EntityType.DIAGNOSTIC,
+        translation_key="emotion_air_calibration_passes",
+        # How many passes "Learn room" runs. Never sent on its own — it becomes the
+        # argument to AT+CALI. 1-9 use the firmware's inline single-digit formatter;
+        # 10-20 take a separate path we have not exercised.
+        fallback_name="Calibration passes",
+    )
     .write_attr_button(
-        EmotionAirOccupancyCluster.AttributeDefs.radar_calibrate.name,
+        EmotionAirOccupancyCluster.AttributeDefs.start_calibration.name,
         1,
         EmotionAirOccupancyCluster.cluster_id,
         initially_disabled=True,

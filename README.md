@@ -27,7 +27,7 @@ ConBee II coordinator and Home Assistant 2026.8.
 | Lux thresholds (bright / normal) | ✅ verified against the vendor app |
 | Radar frequency | ✅ command verified (meaning still unknown) |
 | Presence monitoring switch | ✅ verified on hardware |
-| Radar action buttons | Restart ✅ · Restore ✅ (but the vendor feature does nothing) · **Learn room ✗ broken** |
+| Radar action buttons | Restart ✅ · Restore ✅ (vendor feature does nothing) · Learn room — fixed in v1.10, **untested** |
 
 Every control except **Learn room** has been driven end-to-end and observed emitting the
 right command on the radar's UART:
@@ -59,7 +59,7 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 | Presence monitoring (switch) | on `AT+RESET` / off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
 | Radar frequency | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default. Probably an RF channel; see below |
 | Restore calibration | `AT+INITTH` | The app's "Restore". **Measured to change nothing** — see below. Do not rely on it to undo a scan |
-| Learn room (room empty) | `AT+CALI=<n>` | ⚠️ **Currently a no-op — see the bug below.** Needs a firmware fix |
+| Learn room (room empty) | `AT+CALI=<n>` | The calibration scan. Runs **Calibration passes** passes (default 9). Fixed in v1.10 |
 | Restart radar | `AT+RESET` | Harmless; also re-enables presence monitoring |
 
 > ### ⚠️ Sensitivity runs backwards — so this is called a *threshold*
@@ -126,7 +126,7 @@ settings, and along with the frequency control they are **disabled by default**.
 > Because `AT+CALI` characterises whatever the radar can see at that instant, run it with
 > the room empty and still, or you will teach it that you are background.
 >
-> ### 🐛 Known bug: "Learn room" does nothing (firmware fix needed)
+> ### 🐛 Fixed in v1.10 — "Learn room" did nothing before that
 > `cmd_05` takes a **one-byte argument** — the number of calibration passes, valid 1–20 —
 > and sends `AT+CALI=<n>`. The shim's `arglen_for()` returns **0** for opcode `0x05`, so
 > the handler's `arg_len == 1` guard fails and it returns having done nothing.
@@ -136,10 +136,10 @@ settings, and along with the frequency control they are **disabled by default**.
 > *does* work and produces a properly graded per-gate profile, so use that until this is
 > fixed.
 >
-> The fix is one line — `case 0x05: return 1;` — plus choosing a pass count for the
-> button to send. It needs a firmware rebuild and reflash, so it is not in the current
-> build. All other opcodes were re-checked against their handlers and have the right
-> argument lengths.
+> Fixed in **v1.10** (`case 0x05: return 1;`), with the pass count exposed as the
+> **Calibration passes** number (1–20, default 9 — the top of the range the firmware
+> formats inline). All other opcodes were re-checked against their handlers and have the
+> right argument lengths.
 
 > **Upgrading?** HA keys each entity's enabled state to its `unique_id` and does not purge
 > those registry rows when you delete a ZHA device — so entities you already had return
@@ -188,6 +188,35 @@ identified yet (`+0x00..0x0F` appears to hold key material; the OTA header buffe
 `0x848000` with what look like heap/stack bounds above it, leaving no region that can be
 claimed with confidence). Since the quirk-side fix is complete and carries no reflashing
 risk, this is filed as "possible" rather than "pending".
+
+## Raw AT passthrough (v1.10+)
+
+The radar understands **58 AT commands**; the stock firmware issues about ten. v1.10 adds a
+passthrough so the rest are reachable from Home Assistant without another firmware build:
+
+```yaml
+action: zha.set_zigbee_cluster_attribute
+data:
+  ieee: "xx:xx:xx:xx:xx:xx:xx:xx"
+  endpoint_id: 1
+  cluster_id: 0x0406
+  attribute: 0xF0FF
+  value: "AT+R8TH=20"
+```
+
+The firmware appends CRLF and forwards it to the radar. There is deliberately **no entity** —
+a free-text command channel to the radar is not something to leave in the UI.
+
+**The interesting use:** the radar has ten range gates at 0.7 m each with individual
+thresholds (`R1TH`–`R10TH`, plus `MR1TH`–`MR10TH` for moving targets). Raising the far ones
+is effectively *"stop detecting past 4 metres"* — the usual fix for a presence sensor that
+sees through a wall or down a hallway. Neither the vendor app nor this quirk exposes that
+directly; the passthrough makes it reachable. Read the current values from the radar's
+status dump on its UART, or just experiment.
+
+> ⚠️ **`AT+BAUD` is refused by the firmware.** The MCU always talks 115200 to the radar, so
+> a successful baud change would permanently cut the link with no recovery short of
+> replacing the radar. Everything else is recoverable with `AT+RESET`.
 
 ## Is this risky?
 

@@ -37,6 +37,12 @@ typedef unsigned int   u32;
 #define ADDR_DISPATCH 0x00004b7du        /* FUN_00004b7c  (thumb bit set)     */
 #define ADDR_ORIG_CB  0x0000a311u        /* FUN_0000a310  (thumb bit set)     */
 #define OCC_CLUSTER   0x0406u            /* Occupancy sensing                 */
+#define ADDR_AT_SEND  0x000088b9u        /* FUN_000088b8 (thumb): send an AT command
+                                          * (cmd, expected_reply, retries, timeout_ms).
+                                          * A NORMAL function — safe to call, unlike the
+                                          * opcode handlers. */
+#define PTR_AT_OK     0x00004F4Cu        /* flash word holding the "AT+OK" string ptr */
+#define ATTR_RAW_AT   0xF0FFu            /* write a raw AT command to the radar       */
 
 #define SRAM_LO       0x00840000u
 #define SRAM_HI       0x00850000u
@@ -108,12 +114,52 @@ static u8 arglen_for(u8 op)
         case 0x15:      /* lux thresholds      2 x u16        */
             return 4;
         case 0x01:      /* radar soft reset    (no args)      */
-        case 0x05:      /* calibrate           (no args)      */
         case 0x07:      /* calibration reset   (no args)      */
             return 0;
+        case 0x05:      /* calibrate: ONE byte = number of passes, 1..20.
+                         * Sending zero args makes cmd_05's `arg_len == 1` guard
+                         * fail and the handler returns having done nothing —
+                         * which is exactly the bug in builds before v1.10. */
+            return 1;
         default:        /* frequency, sensitivity, ...  u8    */
             return 1;
     }
+}
+
+/* ---- send an arbitrary AT command to the radar -----------------------------
+ * The radar understands 58 commands; the stock firmware issues about ten. This
+ * opens the rest — per-range-gate thresholds (R1TH..R10TH / MR1TH..MR10TH, i.e.
+ * per-distance sensitivity), GAIN, FTIME/STIME and so on — without needing another
+ * firmware build for each experiment.
+ *
+ * Takes a ZCL character string: [u8 length][chars...]. CRLF is appended here.  */
+static void raw_at(const u8 *zcl_string)
+{
+    char buf[40];
+    u8 len = zcl_string[0];
+    u8 i;
+
+    if (len == 0u || len > 32u)
+        return;
+
+    /* Refuse anything containing "BAUD". The MCU always talks 115200 to the radar,
+     * so a successful AT+BAUD would silently and permanently cut the link — and
+     * there is no radar-side factory reset to recover it. Everything else in the
+     * radar's vocabulary is recoverable with AT+RESET. */
+    for (i = 0; (u16)i + 4u <= (u16)len; i++) {
+        if (zcl_string[1 + i] == 'B' && zcl_string[2 + i] == 'A'
+                && zcl_string[3 + i] == 'U' && zcl_string[4 + i] == 'D')
+            return;
+    }
+
+    for (i = 0; i < len; i++)
+        buf[i] = (char)zcl_string[1 + i];
+    buf[len]     = 0x0D;      /* CR  */
+    buf[len + 1] = 0x0A;      /* LF  */
+    buf[len + 2] = 0x00;      /* NUL */
+
+    ((void (*)(const char *, const char *, int, int))ADDR_AT_SEND)(
+        buf, *(const char **)PTR_AT_OK, 5, 500);
 }
 
 /* ---- attribute id -> BLE opcode (0xFF = ignore) ---------------------------
@@ -158,7 +204,19 @@ void shim_zcl_cb(void *pInMsg)
             for (i = 0; i < count && i < 8u; i++) {
                 u8 *rec = list + 1 + (u32)i * 7u;
                 u16 attrId = (u16)rec[0] | ((u16)rec[1] << 8);
-                u8  opcode = attr_to_opcode(attrId);
+                u8  opcode;
+
+                /* raw AT passthrough is handled before the opcode mapping, because
+                 * 0xF0FF would otherwise decode to opcode 0xFF, our "ignore" value */
+                if (attrId == ATTR_RAW_AT) {
+                    u32 pv = (u32)rec[3] | ((u32)rec[4] << 8)
+                           | ((u32)rec[5] << 16) | ((u32)rec[6] << 24);
+                    if (pv >= SRAM_LO && pv < SRAM_HI)
+                        raw_at((const u8 *)pv);
+                    continue;
+                }
+
+                opcode = attr_to_opcode(attrId);
                 if (opcode != 0xFF) {
                     u32 pv = (u32)rec[3] | ((u32)rec[4] << 8)
                            | ((u32)rec[5] << 16) | ((u32)rec[6] << 24);
