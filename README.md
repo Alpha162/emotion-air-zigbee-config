@@ -60,7 +60,14 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 > That is one observation, not a measurement. Try `1` versus `10` in your own room before
 > trusting it, and please open an issue with what you find.
 
-The three one-shot action buttons and the frequency control are **disabled by default**.
+The three one-shot actions live in their own **Diagnostic** section, separate from the
+settings, and along with the frequency control they are **disabled by default**.
+
+> **Upgrading?** HA keys each entity's enabled state to its `unique_id` and does not purge
+> those registry rows when you delete a ZHA device — so entities you already had return
+> with their previous state, and "disabled by default" only takes effect on a genuinely
+> fresh install. On an existing one, just disable the buttons by hand once.
+
 None of them is destructive and none can brick anything, but the two calibration actions
 characterise whatever the radar can see at the moment you press them, so they should not
 be one accidental click away. Enable the one you want in HA, use it, disable it again.

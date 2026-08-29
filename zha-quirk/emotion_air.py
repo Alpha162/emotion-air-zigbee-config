@@ -64,6 +64,12 @@ configuration.yaml, e.g.
 then restart Home Assistant. It attaches only to devices running the patched
 firmware — a stock unit is left alone, since the controls would do nothing there.
 
+UPGRADING FROM AN EARLIER VERSION OF THIS QUIRK: Home Assistant stores each entity's
+enabled state in its registry keyed by unique_id, and deleting the ZHA device does NOT
+purge those rows — so entities you already had come back with their old enabled state.
+The "disabled by default" behaviour therefore only applies to a genuinely new install.
+On an existing one, disable the action buttons by hand in the HA UI once.
+
 Entity names are kept SHORT on purpose: Home Assistant truncates them in the device
 panel (number entities lose width to their value box, so ~18 characters is the
 practical limit). Rename any of them in the HA UI if you prefer something else.
@@ -76,6 +82,11 @@ from zigpy.zcl.clusters.measurement import OccupancySensing
 from zigpy.zcl.foundation import ZCLAttributeDef
 
 from zhaquirks.builder import QuirkBuilder
+
+try:                                    # running inside Home Assistant
+    from zha.application import EntityType
+except ImportError:                     # standalone (linting, CI)
+    from zigpy.quirks.v2 import EntityType
 
 MANUFACTURER = "LinknLink"
 MODEL = "eMotion Air"
@@ -280,6 +291,13 @@ MIN_PATCHED_FW = 0x101A3001
     QuirkBuilder(MANUFACTURER, MODEL)
     .firmware_version_filter(min_version=MIN_PATCHED_FW, allow_missing=False)
     .replaces(EmotionAirOccupancyCluster)
+    # ZHA auto-creates its own number for pir_o_to_u_delay ("Occupied to unoccupied
+    # delay"), duplicating our "Presence timeout". Suppress just that one — scoped by
+    # unique_id suffix so the occupancy binary_sensor on the same cluster is untouched.
+    .prevent_default_entity_creation(
+        cluster_id=EmotionAirOccupancyCluster.cluster_id,
+        unique_id_suffix="pir_o_to_u_delay",
+    )
     # ---- verified on hardware -------------------------------------------------
     # The device command is AT+TRITH — a trigger *threshold*, which the vendor app
     # surfaces as "Sensitivity". Note those run in opposite directions: a device at
@@ -350,7 +368,7 @@ MIN_PATCHED_FW = 0x101A3001
         step=1,
         unit="lx",
         translation_key="emotion_air_lux_threshold_low",
-        fallback_name="Normal threshold",
+        fallback_name="Light normal",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_threshold_high.name,
@@ -360,7 +378,7 @@ MIN_PATCHED_FW = 0x101A3001
         step=1,
         unit="lx",
         translation_key="emotion_air_lux_threshold_high",
-        fallback_name="Bright threshold",
+        fallback_name="Light bright",
     )
     .switch(
         EmotionAirOccupancyCluster.AttributeDefs.presence_monitoring.name,
@@ -381,6 +399,7 @@ MIN_PATCHED_FW = 0x101A3001
         1,
         EmotionAirOccupancyCluster.cluster_id,
         initially_disabled=True,
+        entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_relearn_environment",
         # AT+INITTH — re-learns the per-range detection thresholds. Run it with the
         # room EMPTY and still; anything moving becomes part of the new baseline.
@@ -391,6 +410,7 @@ MIN_PATCHED_FW = 0x101A3001
         1,
         EmotionAirOccupancyCluster.cluster_id,
         initially_disabled=True,
+        entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_calibrate_radar",
         # AT+CALI — vendor calibration routine. Same caveat: it characterises
         # whatever it can see right now.
@@ -401,6 +421,7 @@ MIN_PATCHED_FW = 0x101A3001
         1,
         EmotionAirOccupancyCluster.cluster_id,
         initially_disabled=True,
+        entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_restart_radar",
         # AT+RESET — harmless; the radar re-initialises in a second or so. Also
         # sets the awake bit, so it doubles as "turn presence monitoring back on".
