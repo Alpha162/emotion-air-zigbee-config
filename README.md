@@ -32,6 +32,41 @@ ConBee II coordinator and Home Assistant 2026.8.
 The ⚠️ items are correct by inspection of the stock firmware's own command handlers,
 but no write has been driven through them end-to-end. Reports welcome.
 
+## What the settings actually do
+
+Home Assistant has no tooltips for these entities, so the explanations live here and in
+the quirk's docstring.
+
+| Control | Device command | Notes |
+|---|---|---|
+| Radar sensitivity (1–10) | `AT+TRITH=n` | **Direction unconfirmed — see below** |
+| No-motion duration | `AT+HOLD=<secs/2>` | How long presence stays "detected" after motion stops. The firmware halves it, so the step is 2 |
+| Light level sample interval | — | Lower = fresher readings, more battery. Firmware clamps below 2 s |
+| Temperature/humidity sample interval | — | Same trade-off; clamped below 10 s |
+| Light threshold: normal / bright | `AT` + one command | The lux boundaries the device reports against. **Both are set by a single command**, so the quirk composes the pair |
+| Presence monitoring (switch) | on `AT+RESET` / off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
+| Radar frequency point | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default |
+| Relearn empty room | `AT+INITTH` | Re-learns detection thresholds — **run with the room empty** |
+| Calibrate radar | `AT+CALI` | Vendor calibration — same caveat |
+| Restart radar | `AT+RESET` | Harmless; also re-enables presence monitoring |
+
+> ### ⚠️ "Sensitivity" probably runs backwards
+> The underlying command is `AT+TRITH` — a trigger **threshold** — while the vendor app
+> labels it "Sensitivity". Those run in opposite directions. A unit at the firmware
+> default of `3` is shown by the app as sensitivity **"High"**, which implies
+> **lower value = more sensitive**.
+>
+> That is one observation, not a measurement. Try `1` versus `10` in your own room before
+> trusting it, and please open an issue with what you find.
+
+The three one-shot action buttons and the frequency control are **disabled by default**.
+None of them is destructive and none can brick anything, but the two calibration actions
+characterise whatever the radar can see at the moment you press them, so they should not
+be one accidental click away. Enable the one you want in HA, use it, disable it again.
+
+Genuinely destructive commands — factory reset, key regeneration, encryption — are
+refused by the patched firmware itself and cannot be reached through the quirk at all.
+
 ## Is this risky?
 
 Less than you would expect, for two reasons:

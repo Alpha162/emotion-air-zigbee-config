@@ -1,28 +1,58 @@
 """ZHA quirk for the LinknLink eMotion Air running the custom config-write firmware.
 
 Stock firmware exposes no way to change the radar/sensor settings over Zigbee — they
-are BLE-only. Our patched firmware (v1.8+, reported as 0x101B3001 / "1.3.0") adds a
-shim to the global ZCL callback that turns writes to the Occupancy cluster (0x0406)
-into the device's own native config commands, which apply the setting to the 24GHz
-radar over its internal UART *and* persist it to flash.
+are BLE-only. The patched firmware adds a shim to the global ZCL callback that turns
+writes to the Occupancy cluster (0x0406) into the device's own native config commands,
+which apply the setting to the 24GHz radar over its internal UART *and* persist it to
+flash. Requires firmware reporting version 0x101A3001 or higher.
 
-Attribute -> device command mapping implemented by the firmware shim:
-    0x0010  (uint16)  -> presence timeout, seconds        [PROVEN]
-    0x0012  (uint8)   -> radar sensitivity, 1..10         [PROVEN]
-    0xF0nn  (varies)  -> native BLE opcode 0xnn, generic  [see below]
-       0xF002 uint8   frequency (0..4)
-       0xF013 uint16  lux sample interval (>= 2)
-       0xF014 uint16  temp/humidity sample interval (>= 10)
-       0xF001 any     restart radar   (opcode takes no args)
-       0xF005 any     calibrate radar (opcode takes no args)
-    Destructive opcodes (0x10 encryption, 0x11 key regen, 0x12 factory reset) are
-    refused by the firmware itself, so they cannot be reached from here.
+WHAT EACH CONTROL DOES
+----------------------
+"Verified" below means a write was driven end-to-end and observed arriving at the
+radar; the rest are correct by inspection of the stock firmware's own handlers but
+have not been exercised.
 
-NOTE ON READ-BACK: these attributes are not (yet) in the device's readable attribute
-table, so ZHA cannot read current values from the device. The entities are therefore
-cache-backed: they show "unknown" until you set them once, then track the last value
-written. Writes work regardless — that is the part we verified on hardware. A future
-firmware revision can register the attributes properly so real values are readable.
+  Radar sensitivity (1-10)          -> AT+TRITH=n              [verified]
+      ** DIRECTION IS UNCONFIRMED. ** The device command is a trigger THRESHOLD,
+      while the vendor app labels it "Sensitivity" — and those run opposite ways.
+      A unit at the firmware default of 3 is displayed by the app as "High",
+      which implies LOWER value = MORE sensitive. That is one observation, not a
+      measurement, so try 1 vs 10 in your own room before trusting it.
+
+  No-motion duration before clearing -> AT+HOLD=<seconds/2>     [verified]
+      How long presence stays "detected" after motion stops. The firmware halves
+      it for the radar, so odd values truncate; the step is 2.
+
+  Light level sample interval        -> lux sampling period, seconds
+  Temperature/humidity sample intvl  -> climate sampling period, seconds
+      Lower = fresher readings, more battery. The firmware clamps these below
+      2 s and 10 s respectively back to defaults, hence the entity minimums.
+
+  Light threshold: normal / bright   -> the lux boundaries the device reports
+      against ("Dim" below normal, "Normal" between, "Bright" above). Both are
+      set by ONE device command, so the quirk composes the pair on write.
+
+  Presence monitoring (switch)       -> ON: AT+RESET / OFF: AT+SLEEP
+      Powers the radar down entirely. There is no single on/off command, so this
+      maps to two different opcodes. Off = the device stops detecting presence.
+
+  Radar frequency point (advanced)   -> AT+FREQ=<0..4>   [disabled by default]
+      Meaning UNKNOWN. Most plausibly an RF frequency point to stop neighbouring
+      24GHz radars interfering — but that is inference. Left disabled.
+
+  Relearn empty room / Calibrate     -> AT+INITTH / AT+CALI  [disabled by default]
+  Restart radar                      -> AT+RESET             [disabled by default]
+      One-shot actions. None is destructive, but the first two characterise
+      whatever the radar can see AT THAT MOMENT, so run them with the room empty
+      and still. Enable in HA when you want them.
+
+Genuinely destructive commands (factory reset, key regeneration, encryption) are
+refused by the firmware itself and cannot be reached through this quirk at all.
+
+READING CURRENT VALUES: firmware v1.9+ publishes read-only mirrors of the live
+config block (0xF1nn), so the entities show the device's REAL settings rather than
+the last value written. Reads use those; writes go via the 0xF0nn command path so
+the radar is actually updated and the change persisted to flash.
 
 Install: put this file in the directory referenced by `custom_quirks_path` in your
 configuration.yaml, e.g.
@@ -30,7 +60,8 @@ configuration.yaml, e.g.
     zha:
       custom_quirks_path: /config/zha_quirks/
 
-then restart Home Assistant.
+then restart Home Assistant. It attaches only to devices running the patched
+firmware — a stock unit is left alone, since the controls would do nothing there.
 """
 
 import zigpy.types as t
@@ -245,13 +276,19 @@ MIN_PATCHED_FW = 0x101A3001
     .firmware_version_filter(min_version=MIN_PATCHED_FW, allow_missing=False)
     .replaces(EmotionAirOccupancyCluster)
     # ---- verified on hardware -------------------------------------------------
+    # The device command is AT+TRITH — a trigger *threshold*, which the vendor app
+    # surfaces as "Sensitivity". Note those run in opposite directions: a device at
+    # the firmware default of 3 is shown by the app as sensitivity "High", implying
+    # LOWER value = MORE sensitive. That is consistent with it being a threshold,
+    # but it rests on one observation, so the name below stays neutral rather than
+    # asserting a direction we have not measured. See README.
     .number(
         OccupancySensing.AttributeDefs.pir_u_to_o_threshold.name,   # 0x0012
         EmotionAirOccupancyCluster.cluster_id,
         min_value=1,
         max_value=10,
         step=1,
-        translation_key="radar_sensitivity",
+        translation_key="emotion_air_radar_sensitivity",
         fallback_name="Radar sensitivity",
     )
     .number(
@@ -259,20 +296,26 @@ MIN_PATCHED_FW = 0x101A3001
         EmotionAirOccupancyCluster.cluster_id,
         min_value=2,
         max_value=3600,
-        step=2,          # firmware halves this for the radar, so odd values truncate
+        step=2,          # the firmware halves this for the radar, so odd values truncate
         unit=UnitOfTime.SECONDS,
-        translation_key="presence_timeout",
-        fallback_name="Presence timeout",
+        translation_key="emotion_air_presence_timeout",
+        fallback_name="No-motion duration before clearing",
     )
     # ---- implemented in firmware, not yet exercised ---------------------------
+    # Disabled by default: we know this sends AT+FREQ=<0..4> to the radar, but not
+    # what the values mean. Most likely an RF frequency point, used to stop nearby
+    # 24GHz radars interfering with each other — but that is INFERENCE, not
+    # confirmed, so it is not something to nudge by accident. Enable it in HA if
+    # you want to experiment.
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.radar_frequency.name,
         EmotionAirOccupancyCluster.cluster_id,
         min_value=0,
         max_value=4,
         step=1,
-        translation_key="radar_frequency",
-        fallback_name="Radar frequency",
+        initially_disabled=True,
+        translation_key="emotion_air_radar_frequency",
+        fallback_name="Radar frequency point (advanced)",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_sample_interval.name,
@@ -281,8 +324,8 @@ MIN_PATCHED_FW = 0x101A3001
         max_value=3600,
         step=1,
         unit=UnitOfTime.SECONDS,
-        translation_key="lux_sample_interval",
-        fallback_name="Light sample interval",
+        translation_key="emotion_air_lux_sample_interval",
+        fallback_name="Light level sample interval",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.climate_sample_interval.name,
@@ -291,8 +334,8 @@ MIN_PATCHED_FW = 0x101A3001
         max_value=3600,
         step=1,
         unit=UnitOfTime.SECONDS,
-        translation_key="climate_sample_interval",
-        fallback_name="Temperature sample interval",
+        translation_key="emotion_air_climate_sample_interval",
+        fallback_name="Temperature/humidity sample interval",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_threshold_low.name,
@@ -301,8 +344,8 @@ MIN_PATCHED_FW = 0x101A3001
         max_value=10000,
         step=1,
         unit="lx",
-        translation_key="lux_threshold_low",
-        fallback_name="Light threshold (normal)",
+        translation_key="emotion_air_lux_threshold_low",
+        fallback_name="Light threshold: normal above (lx)",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_threshold_high.name,
@@ -311,35 +354,52 @@ MIN_PATCHED_FW = 0x101A3001
         max_value=10000,
         step=1,
         unit="lx",
-        translation_key="lux_threshold_high",
-        fallback_name="Light threshold (bright)",
+        translation_key="emotion_air_lux_threshold_high",
+        fallback_name="Light threshold: bright above (lx)",
     )
     .switch(
         EmotionAirOccupancyCluster.AttributeDefs.presence_monitoring.name,
         EmotionAirOccupancyCluster.cluster_id,
-        translation_key="presence_monitoring",
+        translation_key="emotion_air_presence_monitoring",
         fallback_name="Presence monitoring",
     )
+    # ---- one-shot actions -----------------------------------------------------
+    # All three are DISABLED BY DEFAULT. None is destructive and none can brick
+    # anything, but they change how the radar sees the room and a stray click is
+    # annoying to undo — the results depend on what the room looked like at the
+    # moment you pressed. Enable the one you want in HA, use it, and disable it
+    # again if you like. (Genuinely destructive commands — factory reset, key
+    # regeneration, encryption — are refused by the firmware and are unreachable
+    # from here at all.)
     .write_attr_button(
         EmotionAirOccupancyCluster.AttributeDefs.relearn_environment.name,
         1,
         EmotionAirOccupancyCluster.cluster_id,
-        translation_key="relearn_environment",
-        fallback_name="Relearn environment",
-    )
-    .write_attr_button(
-        EmotionAirOccupancyCluster.AttributeDefs.radar_restart.name,
-        1,
-        EmotionAirOccupancyCluster.cluster_id,
-        translation_key="restart_radar",
-        fallback_name="Restart radar",
+        initially_disabled=True,
+        translation_key="emotion_air_relearn_environment",
+        # AT+INITTH — re-learns the per-range detection thresholds. Run it with the
+        # room EMPTY and still; anything moving becomes part of the new baseline.
+        fallback_name="Relearn empty room (run with room empty)",
     )
     .write_attr_button(
         EmotionAirOccupancyCluster.AttributeDefs.radar_calibrate.name,
         1,
         EmotionAirOccupancyCluster.cluster_id,
-        translation_key="calibrate_radar",
-        fallback_name="Calibrate radar",
+        initially_disabled=True,
+        translation_key="emotion_air_calibrate_radar",
+        # AT+CALI — vendor calibration routine. Same caveat: it characterises
+        # whatever it can see right now.
+        fallback_name="Calibrate radar (run with room empty)",
+    )
+    .write_attr_button(
+        EmotionAirOccupancyCluster.AttributeDefs.radar_restart.name,
+        1,
+        EmotionAirOccupancyCluster.cluster_id,
+        initially_disabled=True,
+        translation_key="emotion_air_restart_radar",
+        # AT+RESET — harmless; the radar re-initialises in a second or so. Also
+        # sets the awake bit, so it doubles as "turn presence monitoring back on".
+        fallback_name="Restart radar",
     )
     .add_to_registry()
 )
