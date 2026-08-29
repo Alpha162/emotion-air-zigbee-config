@@ -1,23 +1,24 @@
 # Obtaining the stock firmware image
 
-**This repository deliberately contains no firmware binaries.** The eMotion Air's stock
-firmware is LinknLink's copyrighted work; a patched image is ~99.8% their code with a few
-hundred bytes of ours appended, so distributing one would be redistributing their product.
+This repository deliberately contains no firmware binaries. The eMotion Air's stock
+firmware is LinknLink's copyrighted work, and a patched image is about 99.8% their code
+with a few hundred bytes of ours appended, so distributing one would be redistributing
+their product.
 
-The tooling here is a *patch generator*: you supply your own copy of the stock image, and
-it produces the patched build locally. Nothing about the result differs from ours — the
+The tooling here is a patch generator: you supply your own copy of the stock image and it
+produces the patched build locally. Nothing about the result differs from ours, because the
 patches are deterministic.
 
 ## What you need
 
-The raw Telink firmware image for **eMotion Air v1.1.9**:
+The raw Telink firmware image for eMotion Air v1.1.9:
 
 | Property | Value |
 |---|---|
 | Size | 215,860 bytes (`0x34B34`) |
 | Magic | `KNLT` at offset `0x08` |
-| Format marker | `5D 02` at offsets `0x06`–`0x07` |
-| Length field | u32 at `0x18` == the file size |
+| Format marker | `5D 02` at offsets `0x06` and `0x07` |
+| Length field | u32 at `0x18`, equal to the file size |
 | Trailing 4 bytes | CRC-32/JAMCRC over everything before them |
 
 `firmware/build.py` checks all of these and refuses to proceed if they do not match, so a
@@ -27,22 +28,23 @@ wrong or corrupted file will be rejected rather than silently mangled.
 
 The image is distributed by the vendor as part of their normal firmware-update mechanism.
 Anyone with one of these sensors already has a lawful copy of the firmware running on the
-device they own; obtaining the image for interoperability work is the same act.
+device they own, and obtaining the image for interoperability work is the same act.
 
-We are not going to publish a download link or a scraping script, because that would
-amount to redistributing it by proxy. Getting hold of it is the one step you do yourself.
+We are not going to publish a download link or a scraping script, because that would amount
+to redistributing it by proxy. Getting hold of it is the one step you do yourself.
 
 ## A note on the legal footing
 
-In the UK, **CDPA 1988 s50B** permits decompiling a program to obtain the information
-needed to make an independently created program interoperate with it, and **s296A** voids
-contract terms purporting to forbid that. The EU Software Directive (2009/24/EC, Arts. 5–6)
-is equivalent. Making a Home Assistant integration work with hardware you own is close to
-the textbook example.
+In the UK, CDPA 1988 s50B permits decompiling a program to obtain the information needed to
+make an independently created program interoperate with it, and s296A voids contract terms
+purporting to forbid that. The EU Software Directive (2009/24/EC, Arts. 5-6) is equivalent.
+Making a Home Assistant integration work with hardware you own is close to the textbook
+example.
 
-That protects the *analysis* and the interoperable software — this repository. It does not
-extend to redistributing the vendor's binary, which is exactly why you have to bring your
-own. This is a description of why the repository is shaped this way, not legal advice.
+That protects the analysis and the interoperable software, meaning this repository. It does
+not extend to redistributing the vendor's binary, which is exactly why you have to bring
+your own. This describes why the repository is shaped the way it is, and is not legal
+advice.
 
 ## Verifying what you have
 
