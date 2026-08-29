@@ -271,6 +271,23 @@ Mapping the vendor app's Configuration screen onto the firmware:
 One unexplained case remains: sensitivity value `10` branches away at `0x5046` instead of
 sending `AT+TRITH`, possibly an auto/self-learning mode.
 
+## Registering attributes changes write behaviour
+
+Worth knowing before you extend the attribute table. With the stock 2-entry occupancy
+table, ZCL writes to *unregistered* attributes were answered **SUCCESS** — the write was
+effectively ignored by the stack, but our global-callback shim still saw it and acted, so
+everything worked.
+
+Publishing a larger table (the v1.9 read path) makes the stack validate writes against it.
+Anything not in the table now returns **`UNSUPPORTED_ATTRIBUTE`**, *after* the callback has
+already run. The side effect still happens; only the response changes. zigpy treats that as
+a failed write and Home Assistant reverts the entity.
+
+So: **if you register attributes for reading, you must also register everything you intend
+to write**, with write access. Watch out for packed fields — a raw ZCL write to a byte
+holding several bit-fields (like `+0x15`) will clobber its neighbours, which is precisely
+why the read mirrors are read-only.
+
 ## Dead ends
 
 - **Hardware (SWS) flashing is not viable on this module.** No reset pad is exposed on the

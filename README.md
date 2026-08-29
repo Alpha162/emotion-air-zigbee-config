@@ -96,6 +96,34 @@ be one accidental click away. Enable the one you want in HA, use it, disable it 
 Genuinely destructive commands — factory reset, key regeneration, encryption — are
 refused by the patched firmware itself and cannot be reached through the quirk at all.
 
+## ⚠️ Known issue: writes work, but Home Assistant reports them as failed
+
+**Symptom.** You change a setting, HA shows an error, and the slider snaps back to its old
+value. It looks like the write was rejected.
+
+**What actually happens.** The write succeeds. The shim fires, the command reaches the
+radar, and the value is written and persisted to flash — verifiable on the radar's UART
+and by reading the value back. What fails is only the *reply*: the device's ZCL layer
+answers `UNSUPPORTED_ATTRIBUTE`, zigpy raises, and HA reverts the displayed value.
+
+**Workaround.** Refresh the entity (Developer Tools → `homeassistant.update_entity`, or
+just wait for the next poll) and you will see the real, updated value.
+
+**Cause.** The read path (firmware v1.9+) registers an attribute table on the occupancy
+cluster, which makes the device's ZCL layer validate *writes* against that table too. The
+attributes we write to are not in it, so it refuses them — after our shim has already
+acted on them. Firmware v1.8, which had no such table, returned success.
+
+**Proper fix (not yet implemented).** Register the written attributes as writable, so the
+device answers SUCCESS. For most of them the data pointer can point straight at the
+matching config offset and the direct write is harmless — `0x0010`→`+0x16`,
+`0xF013`→`+0x18`, `0xF014`→`+0x1A`, `0xF015`→`+0x1C` (one u32 covering both lux
+thresholds, which are contiguous). **Sensitivity is the exception:** it occupies bits 3-6
+of the packed byte at `+0x15`, so a raw ZCL write there would clobber the frequency and
+awake bits — it needs a scratch RAM address instead, and a safe one has not been
+identified yet (`+0x00..0x0F` appears to hold key material; the OTA header buffer at
+`0x844548` is live during transfers).
+
 ## Is this risky?
 
 Less than you would expect, for two reasons:
