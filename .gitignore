@@ -1,4 +1,4 @@
-# NEVER commit firmware images — the stock image is the vendor's copyrighted work,
+# NEVER commit firmware images. The stock image is the vendor's copyrighted work,
 # and a patched build is that image plus a few hundred bytes of ours.
 *.bin
 *.ota

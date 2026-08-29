@@ -8,6 +8,6 @@ winrt-Windows.Devices.Bluetooth.GenericAttributeProfile; sys_platform == "win32"
 winrt-Windows.Storage.Streams; sys_platform == "win32"
 winrt-Windows.Foundation; sys_platform == "win32"
 
-# Optional — only to validate a ZHA OTA provider config before deploying it
+# Optional, only to validate a ZHA OTA provider config before deploying it
 # (see the warning-string trap in the README):
 # zigpy>=2.0
