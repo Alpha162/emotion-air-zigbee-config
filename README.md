@@ -25,12 +25,23 @@ ConBee II coordinator and Home Assistant 2026.8.
 | Reading real current values | ✅ verified on hardware |
 | Light / temp-humidity sample intervals | ✅ verified against the vendor app |
 | Lux thresholds (bright / normal) | ✅ verified against the vendor app |
-| Radar frequency | ⚠️ implemented, untested |
-| Presence monitoring switch | ⚠️ implemented, untested |
-| Radar action buttons | ⚠️ Restart works; **Learn room is broken** (see below) |
+| Radar frequency | ✅ command verified (meaning still unknown) |
+| Presence monitoring switch | ✅ verified on hardware |
+| Radar action buttons | Restart ✅ · Restore ✅ (but the vendor feature does nothing) · **Learn room ✗ broken** |
 
-The ⚠️ items are correct by inspection of the stock firmware's own command handlers,
-but no write has been driven through them end-to-end. Reports welcome.
+Every control except **Learn room** has been driven end-to-end and observed emitting the
+right command on the radar's UART:
+
+| Control set to | Command seen on the wire |
+|---|---|
+| Sensitivity → Medium / High | `AT+TRITH=5` / `AT+TRITH=3` |
+| Presence monitoring → off / on | `AT+SLEEP` / `AT+RESET` |
+| Radar frequency → 2 | `AT+FREQ=2` |
+| Presence timeout → 120 s | `AT+HOLD=60` (firmware halves it) |
+
+Note the presence-monitoring switch correctly emits a *different opcode* per direction,
+which is the fiddliest mapping in the quirk. Reports of anything behaving otherwise are
+welcome.
 
 ## What the settings actually do
 
