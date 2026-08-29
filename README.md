@@ -27,7 +27,7 @@ ConBee II coordinator and Home Assistant 2026.8.
 | Lux thresholds (bright / normal) | ✅ verified against the vendor app |
 | Radar frequency | ⚠️ implemented, untested |
 | Presence monitoring switch | ⚠️ implemented, untested |
-| Restart / calibrate / relearn buttons | ⚠️ implemented, untested |
+| Radar action buttons | ✅ verified on hardware |
 
 The ⚠️ items are correct by inspection of the stock firmware's own command handlers,
 but no write has been driven through them end-to-end. Reports welcome.
@@ -47,8 +47,8 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 | Light normal / Light bright | one `AT` command | The lux boundaries the device reports against. **Both are set by a single command**, so the quirk composes the pair. Bright 11–60000 lx, normal below it. (The vendor app's bright slider runs to 60000 lx with no text entry, which makes precise values nearly impossible — the ranges here are the same but typeable.) |
 | Presence monitoring (switch) | on `AT+RESET` / off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
 | Radar frequency | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default. Probably an RF channel; see below |
-| Relearn empty room | `AT+INITTH` | Re-learns detection thresholds — **run with the room empty** |
-| Calibrate radar (room empty) | `AT+CALI` | Vendor calibration — same caveat |
+| Reinitialise radar | `AT+INITTH` | Acknowledged, restarts the radar, but **measured to change nothing** — effect unidentified |
+| Learn room (room empty) | `AT+CALI` | **The environment-calibration scan.** Rewrites the per-gate thresholds from what it can see — **run with the room empty and still** |
 | Restart radar | `AT+RESET` | Harmless; also re-enables presence monitoring |
 
 > ### ⚠️ Sensitivity runs backwards — so this is called a *threshold*
@@ -89,6 +89,20 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 
 The three one-shot actions live in their own **Diagnostic** section, separate from the
 settings, and along with the frequency control they are **disabled by default**.
+
+> ### What the calibration buttons actually do (measured 2026-08-29)
+> The radar reports its per-range-gate thresholds in the status block it emits on reset,
+> which makes these testable. Pressing each and comparing dumps:
+>
+> - **`AT+CALI`** rewrote **19 thresholds** — the factory ramp (`R1TH=8,7,6,4,4…`) became an
+>   environment-shaped profile (`10,10,6,6…`). This is the real calibration scan, and the
+>   vendor app's "Start detection".
+> - **`AT+INITTH`** is acknowledged (`AT+OK`) and restarts the radar, but left every
+>   threshold **unchanged** across two restarts. It neither learns nor restores, and its
+>   actual purpose is unidentified — so the app's "Restore" must map to something else.
+>
+> Because `AT+CALI` characterises whatever the radar can see at that instant, run it with
+> the room empty and still, or you will teach it that you are background.
 
 > **Upgrading?** HA keys each entity's enabled state to its `unique_id` and does not purge
 > those registry rows when you delete a ZHA device — so entities you already had return

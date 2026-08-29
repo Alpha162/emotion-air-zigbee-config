@@ -39,8 +39,14 @@ have not been exercised.
       Meaning UNKNOWN. Most plausibly an RF frequency point to stop neighbouring
       24GHz radars interfering — but that is inference. Left disabled.
 
-  "Relearn empty room" / "Calibrate radar (room empty)"
-                                    -> AT+INITTH / AT+CALI [disabled by default]
+  "Learn room (room empty)"         -> AT+CALI    [disabled by default]
+      The real environment-calibration scan (the app's "Start detection"): it
+      rewrites the radar's per-range-gate thresholds based on what it can see, so
+      run it with the room EMPTY and still. Measured: 19 thresholds changed.
+  "Reinitialise radar"              -> AT+INITTH  [disabled by default]
+      Acknowledged and restarts the radar, but measured to leave the per-gate
+      thresholds untouched — it neither learns nor restores. Effect unidentified;
+      the app's "Restore" is evidently something else.
   "Restart radar"                   -> AT+RESET            [disabled by default]
       One-shot actions. None is destructive, but the first two characterise
       whatever the radar can see AT THAT MOMENT, so run them with the room empty
@@ -493,9 +499,10 @@ MIN_PATCHED_FW = 0x101A3001
         initially_disabled=True,
         entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_relearn_environment",
-        # AT+INITTH — re-learns the per-range detection thresholds. Run it with the
-        # room EMPTY and still; anything moving becomes part of the new baseline.
-        fallback_name="Relearn empty room",
+        # AT+INITTH. MEASURED 2026-08-29: the radar acknowledges it (AT+OK) and
+        # restarts, but the per-gate thresholds are UNCHANGED across two restarts —
+        # so it neither learns nor restores. Its actual effect is unidentified.
+        fallback_name="Reinitialise radar",
     )
     .write_attr_button(
         EmotionAirOccupancyCluster.AttributeDefs.radar_calibrate.name,
@@ -504,9 +511,11 @@ MIN_PATCHED_FW = 0x101A3001
         initially_disabled=True,
         entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_calibrate_radar",
-        # AT+CALI — vendor calibration routine. Same caveat: it characterises
-        # whatever it can see right now.
-        fallback_name="Calibrate radar (room empty)",
+        # AT+CALI — CONFIRMED 2026-08-29 to be the vendor app's "Start detection":
+        # it rewrote 19 per-gate thresholds from the factory ramp to an
+        # environment-shaped profile. Characterises whatever it can see AT THAT
+        # MOMENT, so the room must be empty and still.
+        fallback_name="Learn room (room empty)",
     )
     .write_attr_button(
         EmotionAirOccupancyCluster.AttributeDefs.radar_restart.name,
