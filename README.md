@@ -20,11 +20,11 @@ ConBee II coordinator and Home Assistant 2026.8.
 
 | Control | State |
 |---|---|
-| Radar sensitivity | ✅ verified on hardware |
+| Detection threshold (sensitivity) | ✅ verified on hardware |
 | Presence timeout (seconds) | ✅ verified on hardware |
 | Reading real current values | ✅ verified on hardware |
-| Light / temp-humidity sample intervals | ⚠️ implemented, lightly tested |
-| Lux thresholds (bright / normal) | ⚠️ implemented, untested |
+| Light / temp-humidity sample intervals | ✅ verified against the vendor app |
+| Lux thresholds (bright / normal) | ✅ verified against the vendor app |
 | Radar frequency | ⚠️ implemented, untested |
 | Presence monitoring switch | ⚠️ implemented, untested |
 | Restart / calibrate / relearn buttons | ⚠️ implemented, untested |
@@ -40,25 +40,32 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 
 | Control | Device command | Notes |
 |---|---|---|
-| Radar sensitivity | `AT+TRITH=n` | **Direction unconfirmed — see below** |
+| Detection threshold | `AT+TRITH=n` | **Lower = more sensitive** — see below |
 | Presence timeout | `AT+HOLD=<secs/2>` | How long presence stays "detected" after motion stops. The firmware halves it, so the step is 2 |
 | Light interval | — | Lower = fresher readings, more battery. Firmware clamps below 2 s |
 | Climate interval | — | Same trade-off; clamped below 10 s |
-| Normal threshold / Bright threshold | `AT` + one command | The lux boundaries the device reports against. **Both are set by a single command**, so the quirk composes the pair |
+| Light normal / Light bright | one `AT` command | The lux boundaries the device reports against. **Both are set by a single command**, so the quirk composes the pair. Bright 11–60000 lx, normal below it. (The vendor app's bright slider runs to 60000 lx with no text entry, which makes precise values nearly impossible — the ranges here are the same but typeable.) |
 | Presence monitoring (switch) | on `AT+RESET` / off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
 | Radar frequency | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default. Probably an RF channel; see below |
 | Relearn empty room | `AT+INITTH` | Re-learns detection thresholds — **run with the room empty** |
 | Calibrate radar (room empty) | `AT+CALI` | Vendor calibration — same caveat |
 | Restart radar | `AT+RESET` | Harmless; also re-enables presence monitoring |
 
-> ### ⚠️ "Sensitivity" probably runs backwards
-> The underlying command is `AT+TRITH` — a trigger **threshold** — while the vendor app
-> labels it "Sensitivity". Those run in opposite directions. A unit at the firmware
-> default of `3` is shown by the app as sensitivity **"High"**, which implies
-> **lower value = more sensitive**.
+> ### ⚠️ Sensitivity runs backwards — so this is called a *threshold*
+> The device command is `AT+TRITH`, a trigger **threshold**, while the vendor app labels
+> it "Sensitivity". They run in opposite directions.
 >
-> That is one observation, not a measurement. Try `1` versus `10` in your own room before
-> trusting it, and please open an issue with what you find.
+> **Confirmed against the app (2026-08-29):** selecting **"Low"** writes **7**, and the
+> firmware default of **3** displays as **"High"**. So:
+>
+> | App | Value |
+> |---|---|
+> | High | **3** |
+> | Medium | ~5 *(interpolated)* |
+> | Low | **7** |
+>
+> **Lower = more sensitive.** The entity is named "Detection threshold" rather than
+> "sensitivity" so the direction is not a nasty surprise.
 
 > ### ℹ️ Radar frequency, and phantom presence with multiple sensors
 > `AT+FREQ` takes 0–4 and its meaning is not documented anywhere we could find. In the

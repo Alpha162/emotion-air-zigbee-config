@@ -12,12 +12,11 @@ WHAT EACH CONTROL DOES
 radar; the rest are correct by inspection of the stock firmware's own handlers but
 have not been exercised.
 
-  "Radar sensitivity" (1-10)        -> AT+TRITH=n              [verified]
-      ** DIRECTION IS UNCONFIRMED. ** The device command is a trigger THRESHOLD,
-      while the vendor app labels it "Sensitivity" — and those run opposite ways.
-      A unit at the firmware default of 3 is displayed by the app as "High",
-      which implies LOWER value = MORE sensitive. That is one observation, not a
-      measurement, so try 1 vs 10 in your own room before trusting it.
+  "Detection threshold" (1-10)      -> AT+TRITH=n              [verified]
+      ** LOWER = MORE SENSITIVE. ** This is a trigger threshold, so it runs the
+      opposite way to the vendor app's "Sensitivity" label. Confirmed against the
+      app on 2026-08-29: selecting "Low" sets 7, and the firmware default of 3
+      shows as "High".   3 = High, ~5 = Medium, 7 = Low.
 
   "Presence timeout" (seconds)      -> AT+HOLD=<seconds/2>     [verified]
       How long presence stays "detected" after motion stops. The firmware halves
@@ -302,12 +301,12 @@ MIN_PATCHED_FW = 0x101A3001
         unique_id_suffix="pir_o_to_u_delay",
     )
     # ---- verified on hardware -------------------------------------------------
-    # The device command is AT+TRITH — a trigger *threshold*, which the vendor app
-    # surfaces as "Sensitivity". Note those run in opposite directions: a device at
-    # the firmware default of 3 is shown by the app as sensitivity "High", implying
-    # LOWER value = MORE sensitive. That is consistent with it being a threshold,
-    # but it rests on one observation, so the name below stays neutral rather than
-    # asserting a direction we have not measured. See README.
+    # AT+TRITH is a trigger THRESHOLD, so it runs OPPOSITE to the vendor app's
+    # "Sensitivity" label. CONFIRMED against the app 2026-08-29: setting "Low" in the
+    # app yields 7, and a unit at the firmware default of 3 shows as "High".
+    #   3 = High, ~5 = Medium, 7 = Low   (3 and 7 measured; 5 interpolated)
+    # LOWER value = MORE sensitive. Named as a threshold so the direction is not a
+    # surprise; calling it "sensitivity" would invert the user's expectation.
     .number(
         OccupancySensing.AttributeDefs.pir_u_to_o_threshold.name,   # 0x0012
         EmotionAirOccupancyCluster.cluster_id,
@@ -315,7 +314,7 @@ MIN_PATCHED_FW = 0x101A3001
         max_value=10,
         step=1,
         translation_key="emotion_air_radar_sensitivity",
-        fallback_name="Radar sensitivity",
+        fallback_name="Detection threshold",
     )
     .number(
         OccupancySensing.AttributeDefs.pir_o_to_u_delay.name,       # 0x0010
@@ -371,8 +370,8 @@ MIN_PATCHED_FW = 0x101A3001
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_threshold_low.name,
         EmotionAirOccupancyCluster.cluster_id,
-        min_value=1,
-        max_value=10000,
+        min_value=0,
+        max_value=60000,   # vendor app allows 0..(bright-1); we cannot cap dynamically
         step=1,
         unit="lx",
         translation_key="emotion_air_lux_threshold_low",
@@ -381,8 +380,8 @@ MIN_PATCHED_FW = 0x101A3001
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_threshold_high.name,
         EmotionAirOccupancyCluster.cluster_id,
-        min_value=1,
-        max_value=10000,
+        min_value=11,
+        max_value=60000,   # matches the vendor app's range
         step=1,
         unit="lx",
         translation_key="emotion_air_lux_threshold_high",
