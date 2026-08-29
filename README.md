@@ -106,23 +106,31 @@ radar, and the value is written and persisted to flash — verifiable on the rad
 and by reading the value back. What fails is only the *reply*: the device's ZCL layer
 answers `UNSUPPORTED_ATTRIBUTE`, zigpy raises, and HA reverts the displayed value.
 
-**Workaround.** Refresh the entity (Developer Tools → `homeassistant.update_entity`, or
-just wait for the next poll) and you will see the real, updated value.
+**Handled by the quirk.** The quirk recognises this specific reply on the specific
+attributes the firmware handles out-of-band, treats it as success, and updates the entity
+to the written value. Only `UNSUPPORTED_ATTRIBUTE` on those attributes is forgiven — any
+other failure is passed through as a real error.
+
+If you are running an older quirk, the workaround is to refresh the entity (Developer
+Tools → `homeassistant.update_entity`) to see the real value.
 
 **Cause.** The read path (firmware v1.9+) registers an attribute table on the occupancy
 cluster, which makes the device's ZCL layer validate *writes* against that table too. The
 attributes we write to are not in it, so it refuses them — after our shim has already
 acted on them. Firmware v1.8, which had no such table, returned success.
 
-**Proper fix (not yet implemented).** Register the written attributes as writable, so the
-device answers SUCCESS. For most of them the data pointer can point straight at the
+**A firmware-side fix is possible but not implemented.** Registering the written
+attributes as writable would make the device answer SUCCESS properly. For most of them the data pointer can point straight at the
 matching config offset and the direct write is harmless — `0x0010`→`+0x16`,
 `0xF013`→`+0x18`, `0xF014`→`+0x1A`, `0xF015`→`+0x1C` (one u32 covering both lux
 thresholds, which are contiguous). **Sensitivity is the exception:** it occupies bits 3-6
 of the packed byte at `+0x15`, so a raw ZCL write there would clobber the frequency and
 awake bits — it needs a scratch RAM address instead, and a safe one has not been
 identified yet (`+0x00..0x0F` appears to hold key material; the OTA header buffer at
-`0x844548` is live during transfers).
+`0x844548` is live during transfers; and the SRAM map shows static data running to roughly
+`0x848000` with what look like heap/stack bounds above it, leaving no region that can be
+claimed with confidence). Since the quirk-side fix is complete and carries no reflashing
+risk, this is filed as "possible" rather than "pending".
 
 ## Is this risky?
 

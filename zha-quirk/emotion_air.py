@@ -78,7 +78,7 @@ import zigpy.types as t
 from zigpy.quirks import CustomCluster
 from zigpy.quirks.v2.homeassistant import UnitOfTime
 from zigpy.zcl.clusters.measurement import OccupancySensing
-from zigpy.zcl.foundation import ZCLAttributeDef
+from zigpy.zcl.foundation import Status, ZCLAttributeDef
 
 from zhaquirks.builder import QuirkBuilder
 
@@ -107,6 +107,14 @@ READ_MAP = {
     0xFF01: (0xF11C, lambda v: v),                 # lux threshold low  (normal)
     0xFF02: (0xF11E, lambda v: v),                 # lux threshold high (bright)
 }
+
+
+# Attributes the patched firmware acts on via its shim rather than through the normal
+# ZCL attribute machinery. The device performs the write (radar command + flash persist)
+# and THEN answers UNSUPPORTED_ATTRIBUTE, because they are not in its registered
+# attribute table. See "Known issue" in the README.
+SHIM_HANDLED = {0x0010, 0x0012, 0xF001, 0xF002, 0xF005,
+                0xF006, 0xF007, 0xF013, 0xF014, 0xF015}
 
 
 class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
@@ -188,6 +196,32 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
             id=0xF11E, type=t.uint16_t, access="r", mandatory=False
         )
 
+    async def _write(self, attributes, manufacturer=None, **kwargs):
+        """Write, then forgive the device's spurious UNSUPPORTED_ATTRIBUTE replies.
+
+        The patched firmware genuinely performs these writes — the value reaches the
+        radar and is persisted to flash — but answers UNSUPPORTED_ATTRIBUTE because the
+        attribute is not in its registered table. Left alone, zigpy treats that as a
+        failure and Home Assistant reverts the entity to its old value, so the setting
+        appears not to stick even though it did.
+
+        We only rewrite the status for attributes we know the shim handles, and only
+        for that one specific status — any other failure is passed through untouched.
+        The cache is updated to the written value so the entity reflects reality
+        immediately rather than after the next poll.
+        """
+        result = await super().write_attributes(
+            attributes, manufacturer=manufacturer, **kwargs)
+        wanted = {self._aid(a): v for a, v in attributes.items()}
+        for group in result or []:
+            for record in group:
+                if (record.status == Status.UNSUPPORTED_ATTRIBUTE
+                        and record.attrid in SHIM_HANDLED):
+                    record.status = Status.SUCCESS
+                    if record.attrid in wanted:
+                        self._update_attribute(record.attrid, wanted[record.attrid])
+        return result
+
     def _aid(self, attr):
         """Resolve an attribute name or id to a numeric id."""
         if isinstance(attr, str):
@@ -257,7 +291,7 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
         if presence is not None:
             # ON -> radar restart (sets awake bit); OFF -> radar sleep (clears it)
             opcode_attr = "radar_restart" if presence else "radar_sleep"
-            result = await super().write_attributes(
+            result = await self._write(
                 {opcode_attr: 1}, manufacturer=manufacturer, **kwargs
             )
             self._update_attribute(0xFF03, bool(presence))
@@ -267,7 +301,7 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
             if high is None:
                 high = self._attr_cache.get(0xFF02, LUX_HIGH_DEFAULT)
             combined = (int(low) & 0xFFFF) | ((int(high) & 0xFFFF) << 16)
-            result = await super().write_attributes(
+            result = await self._write(
                 {"lux_thresholds": combined}, manufacturer=manufacturer, **kwargs
             )
             # keep the halves in cache so both entities show what was set
@@ -275,7 +309,7 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
             self._update_attribute(0xFF02, int(high))
 
         if attrs:
-            result = await super().write_attributes(
+            result = await self._write(
                 attrs, manufacturer=manufacturer, **kwargs
             )
         return result
