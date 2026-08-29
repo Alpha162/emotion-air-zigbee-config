@@ -292,8 +292,11 @@ MIN_PATCHED_FW = 0x101A3001
     .firmware_version_filter(min_version=MIN_PATCHED_FW, allow_missing=False)
     .replaces(EmotionAirOccupancyCluster)
     # ZHA auto-creates its own number for pir_o_to_u_delay ("Occupied to unoccupied
-    # delay"), duplicating our "Presence timeout". Suppress just that one — scoped by
-    # unique_id suffix so the occupancy binary_sensor on the same cluster is untouched.
+    # delay"), duplicating our "Presence timeout". Suppress just that one. This is
+    # scoped by unique_id suffix, which is why our own entity above is given an
+    # explicit unique_id_suffix: without it both would end in "pir_o_to_u_delay" and
+    # this filter would remove ours too. The occupancy binary_sensor on the same
+    # cluster has a different suffix and is unaffected.
     .prevent_default_entity_creation(
         cluster_id=EmotionAirOccupancyCluster.cluster_id,
         unique_id_suffix="pir_o_to_u_delay",
@@ -321,6 +324,11 @@ MIN_PATCHED_FW = 0x101A3001
         max_value=3600,
         step=2,          # the firmware halves this for the radar, so odd values truncate
         unit=UnitOfTime.SECONDS,
+        # MUST differ from the attribute name. ZHA's own auto-created entity for this
+        # attribute is <ieee>-1-1030-pir_o_to_u_delay and ours would default to
+        # <ieee>-1-pir_o_to_u_delay — the suppression filter below matches on the
+        # suffix, so identical suffixes mean it removes BOTH and the control vanishes.
+        unique_id_suffix="presence_timeout",
         translation_key="emotion_air_presence_timeout",
         fallback_name="Presence timeout",
     )
