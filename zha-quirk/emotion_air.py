@@ -101,12 +101,36 @@ READ_MAP = {
     0x0012: (0xF115, lambda v: (v >> 3) & 0x0F),   # radar sensitivity
     0xF002: (0xF115, lambda v: v & 0x07),          # radar frequency
     0xFF03: (0xF115, lambda v: bool(v >> 7)),      # presence monitoring (awake bit)
+    0xFF04: (0xF115, lambda v: SensitivityLevel(_snap_level((v >> 3) & 0x0F))),
     0x0010: (0xF116, lambda v: v),                 # presence timeout, seconds
     0xF013: (0xF118, lambda v: v),                 # light sample interval
     0xF014: (0xF11A, lambda v: v),                 # temp/humidity sample interval
     0xFF01: (0xF11C, lambda v: v),                 # lux threshold low  (normal)
     0xFF02: (0xF11E, lambda v: v),                 # lux threshold high (bright)
 }
+
+
+class SensitivityLevel(t.enum8):
+    """The three levels the vendor app offers, with their measured raw values.
+
+    AT+TRITH is a trigger THRESHOLD, so the raw scale runs the opposite way to
+    "sensitivity": High is the LOWEST number. Confirmed against the app 2026-08-29
+    (app "Low" writes 7; the firmware default of 3 displays as "High").
+    """
+
+    High = 3
+    Medium = 5
+    Low = 7
+
+
+def _snap_level(raw: int) -> int:
+    """Map any raw 1-10 threshold onto the nearest of the three app levels.
+
+    The raw attribute accepts 1-10, so a device may legitimately hold a value the
+    app cannot express (ours sat at 6). The select shows the closest band; the
+    "Detection threshold" number entity exposes the exact value.
+    """
+    return min((3, 5, 7), key=lambda level: (abs(level - raw), level))
 
 
 # Attributes the patched firmware acts on via its shim rather than through the normal
@@ -171,6 +195,11 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
         # so this virtual attribute is translated to the right opcode on write.
         presence_monitoring = ZCLAttributeDef(
             id=0xFF03, type=t.Bool, access="rw", mandatory=False
+        )
+        # Friendly three-level view of the raw threshold. Virtual: writes are
+        # translated to pir_u_to_o_threshold below, reads snap to the nearest band.
+        sensitivity_level = ZCLAttributeDef(
+            id=0xFF04, type=SensitivityLevel, access="rw", mandatory=False
         )
 
         # --- read-only views onto the live config block (firmware v1.9+) --------
@@ -285,8 +314,17 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
         low = take("lux_threshold_low", 0xFF01)
         high = take("lux_threshold_high", 0xFF02)
         presence = take("presence_monitoring", 0xFF03)
+        level = take("sensitivity_level", 0xFF04)
 
         result = None
+
+        if level is not None:
+            # the select is just a friendly face on the raw threshold
+            raw = int(level)
+            result = await self._write(
+                {OccupancySensing.AttributeDefs.pir_u_to_o_threshold.name: raw},
+                manufacturer=manufacturer, **kwargs)
+            self._update_attribute(0xFF04, SensitivityLevel(_snap_level(raw)))
 
         if presence is not None:
             # ON -> radar restart (sets awake bit); OFF -> radar sleep (clears it)
@@ -341,14 +379,26 @@ MIN_PATCHED_FW = 0x101A3001
     #   3 = High, ~5 = Medium, 7 = Low   (3 and 7 measured; 5 interpolated)
     # LOWER value = MORE sensitive. Named as a threshold so the direction is not a
     # surprise; calling it "sensitivity" would invert the user's expectation.
+    .enum(
+        EmotionAirOccupancyCluster.AttributeDefs.sensitivity_level.name,
+        SensitivityLevel,
+        EmotionAirOccupancyCluster.cluster_id,
+        translation_key="emotion_air_sensitivity_level",
+        fallback_name="Sensitivity",
+    )
+    # The raw 1-10 threshold behind the select. Disabled by default: the three levels
+    # cover what the vendor app offers, and this one runs "backwards" (lower = more
+    # sensitive), which is a good way to confuse yourself. Enable it for fine control.
     .number(
         OccupancySensing.AttributeDefs.pir_u_to_o_threshold.name,   # 0x0012
         EmotionAirOccupancyCluster.cluster_id,
         min_value=1,
         max_value=10,
         step=1,
+        initially_disabled=True,
+        entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_radar_sensitivity",
-        fallback_name="Detection threshold",
+        fallback_name="Detection threshold (raw)",
     )
     .number(
         OccupancySensing.AttributeDefs.pir_o_to_u_delay.name,       # 0x0010
@@ -378,6 +428,7 @@ MIN_PATCHED_FW = 0x101A3001
         max_value=4,
         step=1,
         initially_disabled=True,
+        entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_radar_frequency",
         fallback_name="Radar frequency",
     )

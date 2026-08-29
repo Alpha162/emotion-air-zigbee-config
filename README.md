@@ -20,7 +20,7 @@ ConBee II coordinator and Home Assistant 2026.8.
 
 | Control | State |
 |---|---|
-| Detection threshold (sensitivity) | ✅ verified on hardware |
+| Sensitivity (High/Medium/Low) | ✅ verified on hardware |
 | Presence timeout (seconds) | ✅ verified on hardware |
 | Reading real current values | ✅ verified on hardware |
 | Light / temp-humidity sample intervals | ✅ verified against the vendor app |
@@ -40,7 +40,7 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 
 | Control | Device command | Notes |
 |---|---|---|
-| Detection threshold | `AT+TRITH=n` | **Lower = more sensitive** — see below |
+| Sensitivity | `AT+TRITH=n` | **High / Medium / Low** select. The raw value runs backwards (see below), which the select hides |
 | Presence timeout | `AT+HOLD=<secs/2>` | How long presence stays "detected" after motion stops. The firmware halves it, so the step is 2 |
 | Light interval | — | Lower = fresher readings, more battery. Firmware clamps below 2 s |
 | Climate interval | — | Same trade-off; clamped below 10 s |
@@ -64,8 +64,14 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 > | Medium | ~5 *(interpolated)* |
 > | Low | **7** |
 >
-> **Lower = more sensitive.** The entity is named "Detection threshold" rather than
-> "sensitivity" so the direction is not a nasty surprise.
+> **Lower = more sensitive.** Rather than expose that trap, the quirk offers a
+> **Sensitivity** select with High / Medium / Low, matching the vendor app. The raw 1–10
+> value is still available as **Detection threshold (raw)** under Diagnostic, disabled by
+> default, for fine control.
+>
+> The raw scale accepts 1–10, so a device can hold a value the app cannot express (ours
+> sat at 6). The select snaps to the nearest band for display; the raw entity shows the
+> exact number.
 
 > ### ℹ️ Radar frequency, and phantom presence with multiple sensors
 > `AT+FREQ` takes 0–4 and its meaning is not documented anywhere we could find. In the
