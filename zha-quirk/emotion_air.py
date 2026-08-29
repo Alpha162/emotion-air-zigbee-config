@@ -12,36 +12,37 @@ WHAT EACH CONTROL DOES
 radar; the rest are correct by inspection of the stock firmware's own handlers but
 have not been exercised.
 
-  Radar sensitivity (1-10)          -> AT+TRITH=n              [verified]
+  "Radar sensitivity" (1-10)        -> AT+TRITH=n              [verified]
       ** DIRECTION IS UNCONFIRMED. ** The device command is a trigger THRESHOLD,
       while the vendor app labels it "Sensitivity" — and those run opposite ways.
       A unit at the firmware default of 3 is displayed by the app as "High",
       which implies LOWER value = MORE sensitive. That is one observation, not a
       measurement, so try 1 vs 10 in your own room before trusting it.
 
-  No-motion duration before clearing -> AT+HOLD=<seconds/2>     [verified]
+  "Presence timeout" (seconds)      -> AT+HOLD=<seconds/2>     [verified]
       How long presence stays "detected" after motion stops. The firmware halves
       it for the radar, so odd values truncate; the step is 2.
 
-  Light level sample interval        -> lux sampling period, seconds
-  Temperature/humidity sample intvl  -> climate sampling period, seconds
+  "Light interval"   (seconds)      -> lux sampling period
+  "Climate interval" (seconds)      -> temperature/humidity sampling period
       Lower = fresher readings, more battery. The firmware clamps these below
       2 s and 10 s respectively back to defaults, hence the entity minimums.
 
-  Light threshold: normal / bright   -> the lux boundaries the device reports
+  "Normal threshold" / "Bright threshold" -> the lux boundaries it reports
       against ("Dim" below normal, "Normal" between, "Bright" above). Both are
       set by ONE device command, so the quirk composes the pair on write.
 
-  Presence monitoring (switch)       -> ON: AT+RESET / OFF: AT+SLEEP
+  "Presence monitoring" (switch)    -> ON: AT+RESET / OFF: AT+SLEEP
       Powers the radar down entirely. There is no single on/off command, so this
       maps to two different opcodes. Off = the device stops detecting presence.
 
-  Radar frequency point (advanced)   -> AT+FREQ=<0..4>   [disabled by default]
+  "Radar frequency"                 -> AT+FREQ=<0..4>   [disabled by default]
       Meaning UNKNOWN. Most plausibly an RF frequency point to stop neighbouring
       24GHz radars interfering — but that is inference. Left disabled.
 
-  Relearn empty room / Calibrate     -> AT+INITTH / AT+CALI  [disabled by default]
-  Restart radar                      -> AT+RESET             [disabled by default]
+  "Relearn empty room" / "Calibrate radar (room empty)"
+                                    -> AT+INITTH / AT+CALI [disabled by default]
+  "Restart radar"                   -> AT+RESET            [disabled by default]
       One-shot actions. None is destructive, but the first two characterise
       whatever the radar can see AT THAT MOMENT, so run them with the room empty
       and still. Enable in HA when you want them.
@@ -62,6 +63,10 @@ configuration.yaml, e.g.
 
 then restart Home Assistant. It attaches only to devices running the patched
 firmware — a stock unit is left alone, since the controls would do nothing there.
+
+Entity names are kept SHORT on purpose: Home Assistant truncates them in the device
+panel (number entities lose width to their value box, so ~18 characters is the
+practical limit). Rename any of them in the HA UI if you prefer something else.
 """
 
 import zigpy.types as t
@@ -299,7 +304,7 @@ MIN_PATCHED_FW = 0x101A3001
         step=2,          # the firmware halves this for the radar, so odd values truncate
         unit=UnitOfTime.SECONDS,
         translation_key="emotion_air_presence_timeout",
-        fallback_name="No-motion duration before clearing",
+        fallback_name="Presence timeout",
     )
     # ---- implemented in firmware, not yet exercised ---------------------------
     # Disabled by default: we know this sends AT+FREQ=<0..4> to the radar, but not
@@ -315,7 +320,7 @@ MIN_PATCHED_FW = 0x101A3001
         step=1,
         initially_disabled=True,
         translation_key="emotion_air_radar_frequency",
-        fallback_name="Radar frequency point (advanced)",
+        fallback_name="Radar frequency",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_sample_interval.name,
@@ -325,7 +330,7 @@ MIN_PATCHED_FW = 0x101A3001
         step=1,
         unit=UnitOfTime.SECONDS,
         translation_key="emotion_air_lux_sample_interval",
-        fallback_name="Light level sample interval",
+        fallback_name="Light interval",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.climate_sample_interval.name,
@@ -335,7 +340,7 @@ MIN_PATCHED_FW = 0x101A3001
         step=1,
         unit=UnitOfTime.SECONDS,
         translation_key="emotion_air_climate_sample_interval",
-        fallback_name="Temperature/humidity sample interval",
+        fallback_name="Climate interval",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_threshold_low.name,
@@ -345,7 +350,7 @@ MIN_PATCHED_FW = 0x101A3001
         step=1,
         unit="lx",
         translation_key="emotion_air_lux_threshold_low",
-        fallback_name="Light threshold: normal above (lx)",
+        fallback_name="Normal threshold",
     )
     .number(
         EmotionAirOccupancyCluster.AttributeDefs.lux_threshold_high.name,
@@ -355,7 +360,7 @@ MIN_PATCHED_FW = 0x101A3001
         step=1,
         unit="lx",
         translation_key="emotion_air_lux_threshold_high",
-        fallback_name="Light threshold: bright above (lx)",
+        fallback_name="Bright threshold",
     )
     .switch(
         EmotionAirOccupancyCluster.AttributeDefs.presence_monitoring.name,
@@ -379,7 +384,7 @@ MIN_PATCHED_FW = 0x101A3001
         translation_key="emotion_air_relearn_environment",
         # AT+INITTH — re-learns the per-range detection thresholds. Run it with the
         # room EMPTY and still; anything moving becomes part of the new baseline.
-        fallback_name="Relearn empty room (run with room empty)",
+        fallback_name="Relearn empty room",
     )
     .write_attr_button(
         EmotionAirOccupancyCluster.AttributeDefs.radar_calibrate.name,
@@ -389,7 +394,7 @@ MIN_PATCHED_FW = 0x101A3001
         translation_key="emotion_air_calibrate_radar",
         # AT+CALI — vendor calibration routine. Same caveat: it characterises
         # whatever it can see right now.
-        fallback_name="Calibrate radar (run with room empty)",
+        fallback_name="Calibrate radar (room empty)",
     )
     .write_attr_button(
         EmotionAirOccupancyCluster.AttributeDefs.radar_restart.name,

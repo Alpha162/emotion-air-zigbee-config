@@ -20,7 +20,7 @@ ConBee II coordinator and Home Assistant 2026.8.
 
 | Control | State |
 |---|---|
-| Radar sensitivity (1–10) | ✅ verified on hardware |
+| Radar sensitivity | ✅ verified on hardware |
 | Presence timeout (seconds) | ✅ verified on hardware |
 | Reading real current values | ✅ verified on hardware |
 | Light / temp-humidity sample intervals | ⚠️ implemented, lightly tested |
@@ -34,20 +34,21 @@ but no write has been driven through them end-to-end. Reports welcome.
 
 ## What the settings actually do
 
-Home Assistant has no tooltips for these entities, so the explanations live here and in
-the quirk's docstring.
+Home Assistant has no tooltips for these entities, and it truncates long entity names in
+the device panel — so the names are deliberately short and the explanations live here and
+in the quirk's docstring. Rename anything you like in the HA UI.
 
 | Control | Device command | Notes |
 |---|---|---|
-| Radar sensitivity (1–10) | `AT+TRITH=n` | **Direction unconfirmed — see below** |
-| No-motion duration | `AT+HOLD=<secs/2>` | How long presence stays "detected" after motion stops. The firmware halves it, so the step is 2 |
-| Light level sample interval | — | Lower = fresher readings, more battery. Firmware clamps below 2 s |
-| Temperature/humidity sample interval | — | Same trade-off; clamped below 10 s |
-| Light threshold: normal / bright | `AT` + one command | The lux boundaries the device reports against. **Both are set by a single command**, so the quirk composes the pair |
+| Radar sensitivity | `AT+TRITH=n` | **Direction unconfirmed — see below** |
+| Presence timeout | `AT+HOLD=<secs/2>` | How long presence stays "detected" after motion stops. The firmware halves it, so the step is 2 |
+| Light interval | — | Lower = fresher readings, more battery. Firmware clamps below 2 s |
+| Climate interval | — | Same trade-off; clamped below 10 s |
+| Normal threshold / Bright threshold | `AT` + one command | The lux boundaries the device reports against. **Both are set by a single command**, so the quirk composes the pair |
 | Presence monitoring (switch) | on `AT+RESET` / off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
-| Radar frequency point | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default |
+| Radar frequency | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default |
 | Relearn empty room | `AT+INITTH` | Re-learns detection thresholds — **run with the room empty** |
-| Calibrate radar | `AT+CALI` | Vendor calibration — same caveat |
+| Calibrate radar (room empty) | `AT+CALI` | Vendor calibration — same caveat |
 | Restart radar | `AT+RESET` | Harmless; also re-enables presence monitoring |
 
 > ### ⚠️ "Sensitivity" probably runs backwards
