@@ -46,6 +46,22 @@ Every control has been driven end to end and watched arriving on the radar's UAR
 The presence-monitoring switch emits a different opcode in each direction, which is the
 fiddliest mapping in the quirk. Reports of anything behaving otherwise are welcome.
 
+## What it looks like in Home Assistant
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/ha-configuration.png" alt="Home Assistant Configuration card for the sensor: Climate interval 60 s, Light bright 100 lx, Light interval 60 s, Light normal 20 lx, a Presence monitoring toggle, Presence timeout 120 s, and a Sensitivity select set to Medium"></td>
+<td width="50%" valign="top"><img src="docs/images/ha-diagnostic.png" alt="Home Assistant Diagnostic card: Battery 100 percent, Calibration passes 3, Detection threshold 5, a Radar frequency slider, and buttons for Learn room, Restart radar and Restore calibration"></td>
+</tr>
+<tr>
+<td valign="top">The settings, in the standard Configuration card.</td>
+<td valign="top">The raw controls and one-shot actions, kept in Diagnostic and disabled by default on a fresh install.</td>
+</tr>
+</table>
+
+Sensitivity "Medium" in the first card and Detection threshold "5" in the second are the
+same setting shown two ways. That is the inversion described below.
+
 ## What the settings actually do
 
 Home Assistant has no tooltips for these entities and truncates long names in the device
@@ -89,6 +105,8 @@ Low to match the vendor app. The raw 1 to 10 value is still there as "Detection 
 accepts values the app cannot express, a device can sit somewhere in between (ours was on
 6). The select snaps to the nearest band for display and the raw entity shows the exact
 number.
+
+<img src="docs/images/ha-sensitivity.png" alt="The Sensitivity select open in Home Assistant, offering High, Medium and Low, with Medium currently selected" width="380">
 
 ### Radar frequency, and phantom presence with multiple sensors
 
@@ -279,6 +297,13 @@ enforces, using independent code from the builder.
 3. Copy `zha-quirk/emotion_air.py` to `/config/zha_quirks/`, then restart Home Assistant.
    A quirk change needs a full restart; re-adding the device is not enough.
 4. Trigger the update from the device's firmware entity.
+5. Check it took, on the device page:
+
+   <img src="docs/images/ha-device-info.png" alt="Home Assistant device info card showing Firmware 0x101e3001 and a Quirk line reading emotion_air:(LinknLink / eMotion Air)" width="400">
+
+   `Firmware` is the version you built. A `Quirk:` line naming `emotion_air` means the
+   quirk attached; if that line is absent, it did not, and none of the controls above
+   will appear.
 
 Expect it to be slow and to need nudging, because this is a battery-powered sleepy device.
 
