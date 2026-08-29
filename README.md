@@ -27,7 +27,7 @@ ConBee II coordinator and Home Assistant 2026.8.
 | Lux thresholds (bright / normal) | ✅ verified against the vendor app |
 | Radar frequency | ⚠️ implemented, untested |
 | Presence monitoring switch | ⚠️ implemented, untested |
-| Radar action buttons | ✅ verified on hardware |
+| Radar action buttons | ⚠️ Restart works; **Learn room is broken** (see below) |
 
 The ⚠️ items are correct by inspection of the stock firmware's own command handlers,
 but no write has been driven through them end-to-end. Reports welcome.
@@ -48,7 +48,7 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 | Presence monitoring (switch) | on `AT+RESET` / off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
 | Radar frequency | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default. Probably an RF channel; see below |
 | Restore calibration | `AT+INITTH` | The app's "Restore". **Measured to change nothing** — see below. Do not rely on it to undo a scan |
-| Learn room (room empty) | `AT+CALI` | **The environment-calibration scan.** Rewrites the per-gate thresholds from what it can see — **run with the room empty and still** |
+| Learn room (room empty) | `AT+CALI=<n>` | ⚠️ **Currently a no-op — see the bug below.** Needs a firmware fix |
 | Restart radar | `AT+RESET` | Harmless; also re-enables presence monitoring |
 
 > ### ⚠️ Sensitivity runs backwards — so this is called a *threshold*
@@ -111,6 +111,21 @@ settings, and along with the frequency control they are **disabled by default**.
 >
 > Because `AT+CALI` characterises whatever the radar can see at that instant, run it with
 > the room empty and still, or you will teach it that you are background.
+>
+> ### 🐛 Known bug: "Learn room" does nothing (firmware fix needed)
+> `cmd_05` takes a **one-byte argument** — the number of calibration passes, valid 1–20 —
+> and sends `AT+CALI=<n>`. The shim's `arglen_for()` returns **0** for opcode `0x05`, so
+> the handler's `arg_len == 1` guard fails and it returns having done nothing.
+>
+> Confirmed by pressing the button and observing zero change to any of the 24 reported
+> radar parameters, even after a full 100-second wait. The vendor app's "Start detection"
+> *does* work and produces a properly graded per-gate profile, so use that until this is
+> fixed.
+>
+> The fix is one line — `case 0x05: return 1;` — plus choosing a pass count for the
+> button to send. It needs a firmware rebuild and reflash, so it is not in the current
+> build. All other opcodes were re-checked against their handlers and have the right
+> argument lengths.
 
 > **Upgrading?** HA keys each entity's enabled state to its `unique_id` and does not purge
 > those registry rows when you delete a ZHA device — so entities you already had return

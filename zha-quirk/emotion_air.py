@@ -516,7 +516,10 @@ MIN_PATCHED_FW = 0x101A3001
         initially_disabled=True,
         entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_calibrate_radar",
-        # AT+CALI — CONFIRMED 2026-08-29 to be the vendor app's "Start detection":
+        # ⚠️ BROKEN in the current firmware build: cmd_05 needs a 1-byte argument
+        # (calibration passes, 1-20) and the shim's arglen_for() returns 0 for opcode
+        # 0x05, so the handler's guard fails and it does nothing. Needs a firmware fix.
+        # AT+CALI is otherwise the vendor app's "Start detection":
         # it rewrote 19 per-gate thresholds from the factory ramp to an
         # environment-shaped profile. Characterises whatever it can see AT THAT
         # MOMENT, so the room must be empty and still.
