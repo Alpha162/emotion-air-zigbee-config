@@ -268,8 +268,12 @@ Mapping the vendor app's Configuration screen onto the firmware:
 | **Presence monitoring** | no single toggle: **on** = opcode `0x01`, **off** = opcode `0x06`, i.e. the awake bit |
 | **Environment self-learning** | opcode `0x07` → `AT+INITTH`, a one-shot threshold relearn |
 
-One unexplained case remains: sensitivity value `10` branches away at `0x5046` instead of
-sending `AT+TRITH`, possibly an auto/self-learning mode.
+A note on the odd-looking branch at `0x5046`: sensitivity value **10** does *not* take the
+normal path. It is not a hidden mode — the normal path renders the digit with
+`value + 0x30`, which only works for 1-9, so value 10 branches to a hardcoded
+`"AT+TRITH=10
+"` literal. `cmd_05` has the same shape for calibration counts above 9.
+Pure string-formatting plumbing.
 
 ## Registering attributes changes write behaviour
 

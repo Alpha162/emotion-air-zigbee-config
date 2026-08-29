@@ -75,6 +75,9 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 > | Medium | ~5 *(interpolated)* |
 > | Low | **7** |
 >
+> The raw scale runs 1–10 with no hidden modes: value 10 merely takes a separate code path
+> because the firmware renders the digit as `value + 0x30`, which only covers 1–9.
+>
 > **Lower = more sensitive.** Rather than expose that trap, the quirk offers a
 > **Sensitivity** select with High / Medium / Low, matching the vendor app. The raw 1–10
 > value is still available as **Detection threshold (raw)** under Diagnostic, disabled by
