@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Wrap a raw eMotion Air firmware image in a Zigbee OTA (.ota) container.
 
-Normally invoked by firmware/build.py, but usable standalone — e.g. to wrap a
+Normally invoked by firmware/build.py, but usable standalone, e.g. to wrap a
 STOCK image with a high file version so ZHA will offer it as an "upgrade", which
 is how you roll back over the air (the device accepts any version that differs
 from the one it is running; it only rejects an exactly equal one).
@@ -20,7 +20,7 @@ Container layout (all little-endian):
     0x14 32B  header string                  (not checked)
     0x34 u32  total image size  = 62 + len(image)
   6-byte sub-element
-    0x00 u16  tag id            0x0000       (do NOT use 0xF000 — shifts the payload)
+    0x00 u16  tag id            0x0000       (do NOT use 0xF000, it shifts the payload)
     0x02 u32  length            = len(image)
   then the raw image, verbatim.
 

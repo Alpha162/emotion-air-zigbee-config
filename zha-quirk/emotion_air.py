@@ -1,6 +1,6 @@
 """ZHA quirk for the LinknLink eMotion Air running the custom config-write firmware.
 
-Stock firmware exposes no way to change the radar/sensor settings over Zigbee — they
+Stock firmware exposes no way to change the radar/sensor settings over Zigbee: they
 are BLE-only. The patched firmware adds a shim to the global ZCL callback that turns
 writes to the Occupancy cluster (0x0406) into the device's own native config commands,
 which apply the setting to the 24GHz radar over its internal UART *and* persist it to
@@ -8,9 +8,9 @@ flash. Requires firmware reporting version 0x101A3001 or higher.
 
 WHAT EACH CONTROL DOES
 ----------------------
-"Verified" below means a write was driven end-to-end and observed arriving at the
-radar; the rest are correct by inspection of the stock firmware's own handlers but
-have not been exercised.
+Every control below has been driven end to end. Most were watched arriving on the
+radar's UART; the sample intervals and lux thresholds, which send no radar command,
+were checked by round-tripping them through the vendor app.
 
   "Detection threshold" (1-10)      -> AT+TRITH=n              [verified]
       ** LOWER = MORE SENSITIVE. ** This is a trigger threshold, so it runs the
@@ -37,14 +37,18 @@ have not been exercised.
 
   "Radar frequency"                 -> AT+FREQ=<0..4>   [disabled by default]
       Meaning UNKNOWN. Most plausibly an RF frequency point to stop neighbouring
-      24GHz radars interfering — but that is inference. Left disabled.
+      24GHz radars interfering, but that is inference. Left disabled.
 
-  "Learn room (room empty)"         -> AT+CALI    [disabled by default]
+  "Learn room (room empty)"         -> AT+CALI=<passes>  [disabled by default]
       The real environment-calibration scan (the app's "Start detection"): it
       rewrites the radar's per-range-gate thresholds based on what it can see, so
       run it with the room EMPTY and still. Measured: 19 thresholds changed.
+      Needs firmware v1.10 or later, which is where the pass-count argument was
+      fixed. A pass takes about 22 s, so a scan runs for roughly passes x 22 s.
+  "Calibration passes" (1-20)       -> the argument to the scan above
+      Held locally and sent with the next "Learn room", never on its own.
   "Restore calibration"             -> AT+INITTH  [disabled by default]
-      The vendor app's "Restore" — confirmed by pressing it in the app and seeing
+      The vendor app's "Restore", confirmed by pressing it in the app and seeing
       an identical UART signature. MEASURED: it changes nothing. The per-gate
       thresholds survive it unaltered, so the vendor's own restore does not appear
       to work. Do NOT rely on it to undo a calibration scan.
@@ -55,6 +59,10 @@ have not been exercised.
 
 Genuinely destructive commands (factory reset, key regeneration, encryption) are
 refused by the firmware itself and cannot be reached through this quirk at all.
+
+RAW AT PASSTHROUGH: firmware v1.10 and later forward attribute 0xF0FF to the radar
+verbatim, which reaches the rest of its 58-command vocabulary. It has no entity on
+purpose; drive it with zha.set_zigbee_cluster_attribute when you need it.
 
 READING CURRENT VALUES: firmware v1.9+ publishes read-only mirrors of the live
 config block (0xF1nn), so the entities show the device's REAL settings rather than
@@ -68,11 +76,11 @@ configuration.yaml, e.g.
       custom_quirks_path: /config/zha_quirks/
 
 then restart Home Assistant. It attaches only to devices running the patched
-firmware — a stock unit is left alone, since the controls would do nothing there.
+firmware. A stock unit is left alone, since the controls would do nothing there.
 
 UPGRADING FROM AN EARLIER VERSION OF THIS QUIRK: Home Assistant stores each entity's
 enabled state in its registry keyed by unique_id, and deleting the ZHA device does NOT
-purge those rows — so entities you already had come back with their old enabled state.
+purge those rows, so entities you already had come back with their old enabled state.
 The "disabled by default" behaviour therefore only applies to a genuinely new install.
 On an existing one, disable the action buttons by hand in the HA UI once.
 
@@ -221,7 +229,7 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
             id=0xFF06, type=t.uint8_t, access="w", mandatory=False
         )
         # Raw AT passthrough (firmware v1.10+). Declared so zigpy will send it, but
-        # given no entity on purpose — a free-text command channel to the radar is
+        # given no entity on purpose: a free-text command channel to the radar is
         # not something to leave lying around in the UI. Drive it deliberately:
         #
         #   action: zha.set_zigbee_cluster_attribute
@@ -234,7 +242,7 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
         #
         # The firmware appends CRLF and refuses anything containing "BAUD" (that one
         # would permanently cut the link to the radar). Everything else in the
-        # radar's 58-command vocabulary is reachable — notably the per-range-gate
+        # radar's 58-command vocabulary is reachable, notably the per-range-gate
         # thresholds R1TH..R10TH / MR1TH..MR10TH, i.e. per-distance sensitivity.
         raw_at_command = ZCLAttributeDef(
             id=0xF0FF, type=t.CharacterString, access="w", mandatory=False
@@ -268,7 +276,7 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
         """A synthetic SUCCESS for an attribute handled entirely inside the quirk.
 
         Some attributes (the calibration pass count, for one) never travel to the
-        device — they are held here and used as an argument later. Home Assistant
+        device: they are held here and used as an argument later. Home Assistant
         still expects write_attributes() to return status records it can subscript,
         so returning None makes ZHA raise "'NoneType' object is not subscriptable".
         """
@@ -277,14 +285,14 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
     async def _write(self, attributes, manufacturer=None, **kwargs):
         """Write, then forgive the device's spurious UNSUPPORTED_ATTRIBUTE replies.
 
-        The patched firmware genuinely performs these writes — the value reaches the
-        radar and is persisted to flash — but answers UNSUPPORTED_ATTRIBUTE because the
+        The patched firmware genuinely performs these writes (the value reaches the
+        radar and is persisted to flash) but answers UNSUPPORTED_ATTRIBUTE because the
         attribute is not in its registered table. Left alone, zigpy treats that as a
         failure and Home Assistant reverts the entity to its old value, so the setting
         appears not to stick even though it did.
 
         We only rewrite the status for attributes we know the shim handles, and only
-        for that one specific status — any other failure is passed through untouched.
+        for that one specific status. Any other failure is passed through untouched.
         The cache is updated to the written value so the entity reflects reality
         immediately rather than after the next poll.
         """
@@ -416,7 +424,7 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
             result = await self._write(
                 attrs, manufacturer=manufacturer, **kwargs
             )
-        # never return None — ZHA subscripts this to read a status
+        # never return None, since ZHA subscripts this to read a status
         return result if result is not None else self._local_ok(0x0000)
 
 
@@ -439,7 +447,7 @@ MIN_PATCHED_FW = 0x101A3001
         cluster_id=EmotionAirOccupancyCluster.cluster_id,
         unique_id_suffix="pir_o_to_u_delay",
     )
-    # ---- verified on hardware -------------------------------------------------
+    # ---- detection settings ---------------------------------------------------
     # AT+TRITH is a trigger THRESHOLD, so it runs OPPOSITE to the vendor app's
     # "Sensitivity" label. CONFIRMED against the app 2026-08-29: setting "Low" in the
     # app yields 7, and a unit at the firmware default of 3 shows as "High".
@@ -476,16 +484,16 @@ MIN_PATCHED_FW = 0x101A3001
         unit=UnitOfTime.SECONDS,
         # MUST differ from the attribute name. ZHA's own auto-created entity for this
         # attribute is <ieee>-1-1030-pir_o_to_u_delay and ours would default to
-        # <ieee>-1-pir_o_to_u_delay — the suppression filter below matches on the
+        # <ieee>-1-pir_o_to_u_delay. The suppression filter below matches on the
         # suffix, so identical suffixes mean it removes BOTH and the control vanishes.
         unique_id_suffix="presence_timeout",
         translation_key="emotion_air_presence_timeout",
         fallback_name="Presence timeout",
     )
-    # ---- implemented in firmware, not yet exercised ---------------------------
+    # ---- environment sampling, frequency and radar power ----------------------
     # Disabled by default: we know this sends AT+FREQ=<0..4> to the radar, but not
     # what the values mean. Most likely an RF frequency point, used to stop nearby
-    # 24GHz radars interfering with each other — but that is INFERENCE, not
+    # 24GHz radars interfering with each other, but that is INFERENCE, not
     # confirmed, so it is not something to nudge by accident. Enable it in HA if
     # you want to experiment.
     .number(
@@ -548,10 +556,10 @@ MIN_PATCHED_FW = 0x101A3001
     # ---- one-shot actions -----------------------------------------------------
     # All three are DISABLED BY DEFAULT. None is destructive and none can brick
     # anything, but they change how the radar sees the room and a stray click is
-    # annoying to undo — the results depend on what the room looked like at the
+    # annoying to undo: the results depend on what the room looked like at the
     # moment you pressed. Enable the one you want in HA, use it, and disable it
-    # again if you like. (Genuinely destructive commands — factory reset, key
-    # regeneration, encryption — are refused by the firmware and are unreachable
+    # again if you like. (Genuinely destructive commands such as factory reset,
+    # key regeneration and encryption are refused by the firmware and are unreachable
     # from here at all.)
     .write_attr_button(
         EmotionAirOccupancyCluster.AttributeDefs.relearn_environment.name,
@@ -578,7 +586,7 @@ MIN_PATCHED_FW = 0x101A3001
         initially_disabled=True,
         entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_calibration_passes",
-        # How many passes "Learn room" runs. Never sent on its own — it becomes the
+        # How many passes "Learn room" runs. Never sent on its own: it becomes the
         # argument to AT+CALI. 1-9 use the firmware's inline single-digit formatter;
         # 10-20 take a separate path we have not exercised.
         fallback_name="Calibration passes",
@@ -590,13 +598,13 @@ MIN_PATCHED_FW = 0x101A3001
         initially_disabled=True,
         entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_calibrate_radar",
-        # ⚠️ BROKEN in the current firmware build: cmd_05 needs a 1-byte argument
-        # (calibration passes, 1-20) and the shim's arglen_for() returns 0 for opcode
-        # 0x05, so the handler's guard fails and it does nothing. Needs a firmware fix.
-        # AT+CALI is otherwise the vendor app's "Start detection":
-        # it rewrote 19 per-gate thresholds from the factory ramp to an
-        # environment-shaped profile. Characterises whatever it can see AT THAT
-        # MOMENT, so the room must be empty and still.
+        # Needs firmware v1.10 or later. cmd_05 takes a 1-byte argument (calibration
+        # passes, 1-20); earlier builds sent none, so the handler's arg_len guard
+        # failed and the button did nothing. Verified on v1.10: 3 passes emits
+        # AT+CALI=3. AT+CALI is the vendor app's "Start detection": it rewrote 19
+        # per-gate thresholds from the factory ramp to an environment-shaped
+        # profile. Characterises whatever it can see AT THAT MOMENT, so the room
+        # must be empty and still. A pass takes about 22 s.
         fallback_name="Learn room (room empty)",
     )
     .write_attr_button(
@@ -606,7 +614,7 @@ MIN_PATCHED_FW = 0x101A3001
         initially_disabled=True,
         entity_type=EntityType.DIAGNOSTIC,
         translation_key="emotion_air_restart_radar",
-        # AT+RESET — harmless; the radar re-initialises in a second or so. Also
+        # AT+RESET is harmless; the radar re-initialises in a second or so. It also
         # sets the awake bit, so it doubles as "turn presence monitoring back on".
         fallback_name="Restart radar",
     )

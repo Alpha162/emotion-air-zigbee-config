@@ -18,7 +18,7 @@ Dual-bank: a bad image lands in the INACTIVE bank and is never booted, so this i
 safe to experiment with. This script also REFUSES to write without an explicit
 --go flag, printing a dry run (packet count, first/last packets) otherwise.
 
-Windows only (native WinRT — bleak loses the race with this sleepy device).
+Windows only, using native WinRT, because bleak loses the race with this device.
 
 Usage:
     python ble_flash.py <image.bin> --addr <BLE_MAC> [--go] [--delay MS]

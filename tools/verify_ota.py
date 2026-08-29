@@ -21,6 +21,9 @@ def check(label, cond, detail=""):
 
 
 def main():
+    if len(sys.argv) < 2:
+        print("usage: verify_ota.py <image.ota> [current_version]")
+        return 2
     path = sys.argv[1]
     cur = int(sys.argv[2], 0) if len(sys.argv) > 2 else 0x10193001
     d = open(path, "rb").read()
@@ -82,10 +85,11 @@ def main():
     failed = [r for r in results if r[0] == BAD]
     print()
     if failed:
-        print(f"*** {len(failed)} CHECK(S) FAILED — do not serve this image ***")
+        print(f"*** {len(failed)} CHECK(S) FAILED, do not serve this image ***")
         return 1
-    print(f"*** ALL {len(results)} CHECKS PASSED — image satisfies every device gate ***")
-    print("NOTE: static verification only. A live transfer over Zigbee is still untested.")
+    print(f"*** ALL {len(results)} CHECKS PASSED, image satisfies every device gate ***")
+    print("NOTE: static verification only. It confirms the image satisfies every")
+    print("      gate the device enforces, not that ZHA will manage to deliver it.")
     return 0
 
 

@@ -1,11 +1,11 @@
 /* ============================================================================
- * eMotion Air — Zigbee/ZHA configuration shim   (Telink TLSR8258, TC32 core)
+ * eMotion Air Zigbee/ZHA configuration shim   (Telink TLSR8258, TC32 core)
  * SPDX-License-Identifier: MIT
  * ----------------------------------------------------------------------------
  * Stock firmware exposes the radar/sensor settings over BLE only. This shim wraps
  * the firmware's GLOBAL ZCL message callback (pointer in flash @0x942C). On a ZCL
  * Write-Attributes to the Occupancy cluster (0x0406) it translates the attribute
- * into the device's OWN native command and runs it through the stock dispatcher —
+ * into the device's OWN native command and runs it through the stock dispatcher,
  * which writes the config block, pushes the setting to the 24GHz radar over its
  * internal UART (an AT command), AND persists it to flash. It then chains to the
  * original callback, so stock behaviour is untouched.
@@ -14,12 +14,12 @@
  * UART, and 0x0010=300 produced AT+HOLD=150 (the firmware halves it). Both read
  * back correctly over BLE after a reboot, i.e. they reached flash.
  *
- * TWO RULES THAT WILL BITE YOU (both cost hours — see docs/reverse-engineering.md):
+ * TWO RULES THAT WILL BITE YOU (both cost hours, see docs/reverse-engineering.md):
  *  1. NEVER jump straight to a per-opcode handler. They are *continuations* of the
  *     dispatcher: they use its 56-byte stack frame (sp+0x24) and return via ITS
  *     epilogue. Jumping to one unwinds your stack and reboots the device. Always
  *     go through the dispatcher at 0x4B7D.
- *  2. Write records are { u16 attrID; u8 dataType; u8 *attrData; } (stride 7) —
+ *  2. Write records are { u16 attrID; u8 dataType; u8 *attrData; } (stride 7):
  *     the last 4 bytes are a POINTER to the value, not the value. They also sit at
  *     odd addresses, so read every field BYTE-WISE; unaligned 16/32-bit loads
  *     silently return rotated garbage on this core.
@@ -39,7 +39,7 @@ typedef unsigned int   u32;
 #define OCC_CLUSTER   0x0406u            /* Occupancy sensing                 */
 #define ADDR_AT_SEND  0x000088b9u        /* FUN_000088b8 (thumb): send an AT command
                                           * (cmd, expected_reply, retries, timeout_ms).
-                                          * A NORMAL function — safe to call, unlike the
+                                          * A NORMAL function, safe to call, unlike the
                                           * opcode handlers. */
 #define PTR_AT_OK     0x00004F4Cu        /* flash word holding the "AT+OK" string ptr */
 #define ATTR_RAW_AT   0xF0FFu            /* write a raw AT command to the radar       */
@@ -48,12 +48,12 @@ typedef unsigned int   u32;
 #define SRAM_HI       0x00850000u
 
 /* ============================================================================
- * v1.9 READ PATH — register extra occupancy attributes that point straight at the
+ * v1.9 READ PATH: register extra occupancy attributes that point straight at the
  * live config block, so ZHA can read the device's REAL current settings.
  *
  * The stock occupancy attribute table (0x334fc) has 2 entries. We publish a larger
  * one from flash and repoint the cluster registration at it (attrTbl @0x3356c,
- * attrNum @0x3356a — patched by build_shim_image.py).
+ * attrNum @0x3356a, patched by build_shim_image.py).
  *
  * All added entries are READ-ONLY (access 0x01) on purpose: writes must keep going
  * through the 0xF0nn shim path so the radar AT command and the flash persist happen.
@@ -118,7 +118,7 @@ static u8 arglen_for(u8 op)
             return 0;
         case 0x05:      /* calibrate: ONE byte = number of passes, 1..20.
                          * Sending zero args makes cmd_05's `arg_len == 1` guard
-                         * fail and the handler returns having done nothing —
+                         * fail and the handler returns having done nothing,
                          * which is exactly the bug in builds before v1.10. */
             return 1;
         default:        /* frequency, sensitivity, ...  u8    */
@@ -128,8 +128,8 @@ static u8 arglen_for(u8 op)
 
 /* ---- send an arbitrary AT command to the radar -----------------------------
  * The radar understands 58 commands; the stock firmware issues about ten. This
- * opens the rest — per-range-gate thresholds (R1TH..R10TH / MR1TH..MR10TH, i.e.
- * per-distance sensitivity), GAIN, FTIME/STIME and so on — without needing another
+ * opens the rest: per-range-gate thresholds (R1TH..R10TH / MR1TH..MR10TH, i.e.
+ * per-distance sensitivity), GAIN, FTIME/STIME and so on, without needing another
  * firmware build for each experiment.
  *
  * Takes a ZCL character string: [u8 length][chars...]. CRLF is appended here.  */
@@ -143,7 +143,7 @@ static void raw_at(const u8 *zcl_string)
         return;
 
     /* Refuse anything containing "BAUD". The MCU always talks 115200 to the radar,
-     * so a successful AT+BAUD would silently and permanently cut the link — and
+     * so a successful AT+BAUD would silently and permanently cut the link, and
      * there is no radar-side factory reset to recover it. Everything else in the
      * radar's vocabulary is recoverable with AT+RESET. */
     for (i = 0; (u16)i + 4u <= (u16)len; i++) {

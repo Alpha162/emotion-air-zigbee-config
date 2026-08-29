@@ -6,7 +6,7 @@ Reply layout (confirmed live 2026-08-28):
     cfg15   = config byte +0x15: bits0-2 freq, bits3-6 sensitivity, bit7 awake
     timeout = u16 presence timeout (seconds), config +0x16   e.g. b4 00 -> 180
 
-Windows only (uses native WinRT — bleak loses the race with this sleepy device).
+Windows only, using native WinRT, because bleak loses the race with this device.
 Put the sensor in BLE pairing mode first: hold the button ~10 seconds.
 
 Usage: python ble_read.py <BLE_MAC>      e.g. python ble_read.py A1:B2:C3:D4:E5:F6

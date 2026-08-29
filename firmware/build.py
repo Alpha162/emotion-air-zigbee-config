@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Build patched eMotion Air firmware from YOUR OWN stock image.
 
-This repository deliberately ships no firmware binaries — the stock image is
+This repository deliberately ships no firmware binaries. The stock image is
 LinknLink's copyrighted work. You supply it (see FIRMWARE.md); this script
 compiles the shim, applies the patches, and produces:
 
-  * <out>.bin  — raw image, flashable over BLE
-  * <out>.ota  — the same image wrapped as a Zigbee OTA container (optional)
+  * <out>.bin  raw image, flashable over BLE
+  * <out>.ota  the same image wrapped as a Zigbee OTA container (optional)
 
 What it patches into the stock image:
 
@@ -53,7 +53,7 @@ DEFAULT_OTA_VERSION = 0x101A3001   # stock reports 0x10193001
 
 
 def jamcrc(data: bytes) -> int:
-    """CRC-32/JAMCRC — the trailing whole-image checksum the bootloader checks."""
+    """CRC-32/JAMCRC, the trailing whole-image checksum the bootloader checks."""
     return (~zlib.crc32(data)) & 0xFFFFFFFF
 
 
@@ -78,7 +78,7 @@ def compile_shim(verbose=False):
             subprocess.run(cmd, check=True, capture_output=not verbose)
         except FileNotFoundError:
             sys.exit(f"error: {cmd[0]} not found on PATH.\n"
-                     "The TC32 toolchain is required — see README.md "
+                     "The TC32 toolchain is required, see README.md "
                      "(on Windows, run this inside WSL).")
         except subprocess.CalledProcessError as e:
             out = (e.stderr or b"").decode(errors="replace")
@@ -88,7 +88,7 @@ def compile_shim(verbose=False):
     # sanity: our attribute table must have landed at NEW_TABLE
     tbl_at = NEW_TABLE - APPEND_AT
     if len(blob) < tbl_at + 8 or struct.unpack_from("<H", blob, tbl_at)[0] != 0x0000:
-        sys.exit("error: attribute table not at the expected address — check link.ld")
+        sys.exit("error: attribute table not at the expected address, check link.ld")
     return blob
 
 
@@ -101,7 +101,7 @@ def build(base_path, out_base, ota_version, make_ota=True, ver_str=b"1.4.0",
         print(f"  ! warning: expected {STOCK_LEN} bytes for stock v1.1.9; "
               f"offsets may not apply to this build")
     if base[8:12] != b"KNLT":
-        sys.exit("error: no KNLT magic at 0x08 — is this an eMotion Air image?")
+        sys.exit("error: no KNLT magic at 0x08, is this an eMotion Air image?")
     if base[APPEND_AT:APPEND_AT + 4] != base[-4:]:
         sys.exit("error: image does not end where expected; wrong variant?")
 
@@ -121,7 +121,7 @@ def build(base_path, out_base, ota_version, make_ota=True, ver_str=b"1.4.0",
     cur = struct.unpack_from("<I", body, HOOK_PTR)[0]
     if cur != ORIG_CB:
         sys.exit(f"error: hook pointer @0x{HOOK_PTR:05X} is 0x{cur:08X}, "
-                 f"expected 0x{ORIG_CB:08X} — already patched, or unknown build")
+                 f"expected 0x{ORIG_CB:08X}, already patched, or unknown build")
     struct.pack_into("<I", body, HOOK_PTR, SHIM_ENTRY)
     print(f"  hook      : 0x{HOOK_PTR:05X}  0x{cur:08X} -> 0x{SHIM_ENTRY:08X}")
 
@@ -161,14 +161,14 @@ def build(base_path, out_base, ota_version, make_ota=True, ver_str=b"1.4.0",
 
     bin_path = out_base + ".bin"
     open(bin_path, "wb").write(out)
-    print(f"\nwrote {bin_path}  ({len(out)} bytes) — self-check OK")
+    print(f"\nwrote {bin_path}  ({len(out)} bytes), self-check OK")
 
     if make_ota:
         sys.path.insert(0, os.path.join(HERE, os.pardir, "tools"))
         from make_ota import wrap  # noqa: E402
         ota_path = out_base + ".ota"
         wrap(out, ota_path, ota_version)
-        print(f"wrote {ota_path} — serve this from ZHA")
+        print(f"wrote {ota_path}, serve this from ZHA")
     return out
 
 
