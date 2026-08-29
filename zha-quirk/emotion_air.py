@@ -85,7 +85,8 @@ import zigpy.types as t
 from zigpy.quirks import CustomCluster
 from zigpy.quirks.v2.homeassistant import UnitOfTime
 from zigpy.zcl.clusters.measurement import OccupancySensing
-from zigpy.zcl.foundation import Status, ZCLAttributeDef
+from zigpy.zcl.foundation import (Status, WriteAttributesStatusRecord,
+                                  ZCLAttributeDef)
 
 from zhaquirks.builder import QuirkBuilder
 
@@ -262,6 +263,17 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
             id=0xF11E, type=t.uint16_t, access="r", mandatory=False
         )
 
+    @staticmethod
+    def _local_ok(attr_id):
+        """A synthetic SUCCESS for an attribute handled entirely inside the quirk.
+
+        Some attributes (the calibration pass count, for one) never travel to the
+        device — they are held here and used as an argument later. Home Assistant
+        still expects write_attributes() to return status records it can subscript,
+        so returning None makes ZHA raise "'NoneType' object is not subscriptable".
+        """
+        return [[WriteAttributesStatusRecord(status=Status.SUCCESS, attrid=attr_id)]]
+
     async def _write(self, attributes, manufacturer=None, **kwargs):
         """Write, then forgive the device's spurious UNSUPPORTED_ATTRIBUTE replies.
 
@@ -352,12 +364,15 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
         high = take("lux_threshold_high", 0xFF02)
         presence = take("presence_monitoring", 0xFF03)
         passes_set = take("calibration_passes", 0xFF05)
-        if passes_set is not None:          # purely local; nothing to transmit
-            self._update_attribute(0xFF05, int(passes_set))
         level = take("sensitivity_level", 0xFF04)
         start_cal = take("start_calibration", 0xFF06)
 
         result = None
+
+        if passes_set is not None:
+            # purely local: held for the next calibration, never transmitted
+            self._update_attribute(0xFF05, int(passes_set))
+            result = self._local_ok(0xFF05)
 
         if start_cal is not None:
             # cmd_05 takes the pass count as its argument; use whatever the
@@ -401,7 +416,8 @@ class EmotionAirOccupancyCluster(CustomCluster, OccupancySensing):
             result = await self._write(
                 attrs, manufacturer=manufacturer, **kwargs
             )
-        return result
+        # never return None — ZHA subscripts this to read a status
+        return result if result is not None else self._local_ok(0x0000)
 
 
 # Only apply to units running the patched firmware. A stock device would show all of
