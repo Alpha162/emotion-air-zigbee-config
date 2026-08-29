@@ -46,7 +46,7 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 | Climate interval | — | Same trade-off; clamped below 10 s |
 | Normal threshold / Bright threshold | `AT` + one command | The lux boundaries the device reports against. **Both are set by a single command**, so the quirk composes the pair |
 | Presence monitoring (switch) | on `AT+RESET` / off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
-| Radar frequency | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default |
+| Radar frequency | `AT+FREQ=<0..4>` | **Meaning unknown** — disabled by default. Probably an RF channel; see below |
 | Relearn empty room | `AT+INITTH` | Re-learns detection thresholds — **run with the room empty** |
 | Calibrate radar (room empty) | `AT+CALI` | Vendor calibration — same caveat |
 | Restart radar | `AT+RESET` | Harmless; also re-enables presence monitoring |
@@ -59,6 +59,20 @@ in the quirk's docstring. Rename anything you like in the HA UI.
 >
 > That is one observation, not a measurement. Try `1` versus `10` in your own room before
 > trusting it, and please open an issue with what you find.
+
+> ### ℹ️ Radar frequency, and phantom presence with multiple sensors
+> `AT+FREQ` takes 0–4 and its meaning is not documented anywhere we could find. In the
+> radar's command table it sits with `GAIN` and `HW` — the RF/hardware group — rather than
+> with the detection thresholds, so the likeliest reading is a **frequency point within the
+> 24.00–24.25 GHz ISM band**, i.e. a channel so that nearby radars do not interfere.
+>
+> If you run several of these within range of each other and see **phantom presence** — one
+> tripping while its room is empty, or presence that will not clear — that is the classic
+> symptom, and putting them on different values is worth trying. Note the entity shows the
+> value the sensor's MCU stored, not one read back from the radar, so judge it by behaviour.
+>
+> Full reasoning, and the radar's complete AT command set, in
+> [docs/reverse-engineering.md](docs/reverse-engineering.md).
 
 The three one-shot actions live in their own **Diagnostic** section, separate from the
 settings, and along with the frequency control they are **disabled by default**.

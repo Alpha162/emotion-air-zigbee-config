@@ -174,6 +174,86 @@ strb r3, [r1, #21]    ; stores the low byte -> cfg15 | 0x80
 Ghidra decompiles this as `| 0x7f`. Trusting it would have inverted the meaning of the
 awake bit. **Disassemble when the semantics matter.**
 
+## The radar module (RC2410)
+
+The Telink drives the radar over an internal UART at **115200 8N1** using `AT+…` commands.
+No public datasheet or AT reference for this module could be found, so the following is
+reconstructed from the firmware's string table — it may be useful to anyone working with
+the same radar in another product.
+
+### Full AT vocabulary
+
+58 distinct `AT+` strings appear in the image, in **two separate clusters**:
+
+- **`0x2CFC4`–`0x2E214`** — the subset the Telink actually *sends*, sitting near the
+  command handlers that use them.
+- **`0x30E68`–`0x3125C`** — the complete vocabulary, apparently a reference/parser table.
+  The firmware knows far more commands than it ever issues.
+
+Grouped by apparent function:
+
+| Group | Commands |
+|---|---|
+| Link / IO | `AT+BAUD` `AT+GPIO` `AT+TAGOUT` `AT+OUTTRI` `AT+LED` |
+| Session / status | `AT+START` `AT+RESET` `AT+SLEEP` `AT+OK` `AT+ERR` `AT+ATERR` |
+| Detection timing | `AT+HOLD` `AT+FTIME` `AT+STIME` |
+| Detection thresholds | `AT+TRITH` `AT+ONTH` `AT+R1`…`AT+R10` `AT+R1TH`…`AT+R10TH` `AT+MR1TH`…`AT+MR10TH` |
+| Signal processing | `AT+CFAR` `AT+NMF` `AT+SIGN` |
+| RF / hardware | `AT+GAIN` **`AT+FREQ`** `AT+HW` |
+| Calibration | `AT+CALI` `AT+INIT` `AT+INITTH` |
+| Debug / factory | `AT+LAB` `AT+DEBUG` `AT+OLDIDX` |
+
+Only a handful are ever issued by the stock firmware: `RESET`, `TRITH`, `HOLD`, `CALI`,
+`SLEEP`, `INITTH`, `FREQ`, `INIT`, and the `TAGOUT`/`FTIME`/`STIME` trio at bring-up.
+Everything else is available to the radar but unused — a large unexplored surface if you
+wanted to expose more settings than the vendor does.
+
+### What the radar reports back
+
+On reset it emits a status block, which the Telink parses (the field-name strings are in
+the image too):
+
+```
+ROM12_OK / SW=22.31.18 / BaudRate=115200 / GPIO=0 / TAGOUT=0 / HoldFrame=90
+FastTime=2000 / SlowTime=500 / TRITH=3 / HOLDONTH=1
+Range1..Range10 = 0.7m .. 7.0m   (0.7 m per range gate)
+MR1TH..MR10TH, R1TH..R10TH, CFAR=15, NMF=3
+```
+
+Ten range gates at 0.7 m each, with separate per-gate thresholds (`R*TH`) and what look
+like moving-target thresholds (`MR*TH`). The stock firmware's single "sensitivity" control
+only drives `AT+TRITH`; the per-gate thresholds are never touched, so **per-distance
+sensitivity is theoretically reachable but not implemented** by either the vendor or this
+project.
+
+Note what is **absent** from that dump: `FREQ`, `GAIN` and `HW` are settable but never
+reported.
+
+### What `AT+FREQ` probably does
+
+Honestly: **unknown.** The evidence:
+
+- The firmware accepts `0..4`, stores it in config `+0x15` bits 0-2, sends `AT+FREQ=<digit>`,
+  and defaults to `0`.
+- It sits with `GAIN` and `HW` in the command table — the RF/hardware group — rather than
+  with the detection thresholds.
+- The radar never reports it back in its status dump.
+- The vendor app does not expose it at all.
+
+The most plausible reading is a **frequency point within the 24.00–24.25 GHz ISM band**,
+five selectable channels, so multiple radars in proximity do not interfere with each other
+— a common feature on 24 GHz modules. That is inference from naming and grouping, not
+something confirmed against documentation or measurement.
+
+**Where it might matter:** if you run several of these sensors within range of one another
+and see phantom presence — one tripping while its room is empty, or presence that will not
+clear — mutual interference is a classic cause and separating them across frequency values
+is exactly the remedy such a setting exists for.
+
+**Caveat if you experiment:** the read path reports the *Telink's* stored copy of the
+value, not the radar's, because the radar never reports it. The entity will show whatever
+you set even if the radar ignored it. Judge it by behaviour, not by the number.
+
 ## Working out the app's settings
 
 Mapping the vendor app's Configuration screen onto the firmware:
