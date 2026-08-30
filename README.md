@@ -170,12 +170,12 @@ so that is how long a change can sit before it lands.
 Two things shorten the wait. Motion is the usual one: the device reports and polls quickly
 while the radar is seeing something, so walking in front of it gets a write delivered.
 
-A short press of the button also works, and is the better option when the radar is asleep
-and motion is not available. The press sends a ZCL On/Off Toggle, so the device transmits,
-and a queued command can go out on the back of it. Observed on 2026-08-30: a write that had
-been queued for about 13 minutes was delivered 32 seconds after a button press. That is
-correlation rather than proof, but after 13 minutes of nothing it is hard to read as
-coincidence.
+A short press of the button makes the device transmit, since it sends a ZCL On/Off Toggle.
+That looked at first like a way to flush a queued command: a write that had been queued for
+13 minutes went out 31 seconds after a press. Later the same night, repeated presses failed
+to get anything delivered at all, while those same presses arrived at the coordinator
+without trouble. So a press proves the device is alive and transmitting, but it does not
+reliably open a receive window. Treat it as a diagnostic, not a fix.
 
 That leads to one ordering trap worth knowing:
 
@@ -220,6 +220,44 @@ Verified on 2026-08-30 on a unit that had latched `on`. Waking the radar took ab
 minutes of queued retries, occupancy cleared roughly five minutes after the radar came back,
 and switching monitoring off then froze it at `off`, where it stayed. Budget ten minutes for
 the whole cycle, most of it waiting on the poll.
+
+## Presence monitoring off can strand the device, so turn it on before you change anything
+
+This is the sharpest edge in the whole project, and it is worth reading before you touch
+that switch.
+
+Turning Presence monitoring off puts the radar to sleep. That removes motion, and motion is
+what keeps a battery-powered end device polling quickly. Once it settles into a multi-minute
+poll, the parent's buffered frame expires long before the device asks for it, and every
+packet to the device fails:
+
+```
+zigpy.exceptions.DeliveryError: Failed to deliver packet: <TXStatus.APS_NO_ACK: 167>
+```
+
+The switch that turns the radar back on is itself a write to the device, so **you cannot
+undo it from ZHA**. Nothing else in the integration reaches it either, because reads are
+downlink too.
+
+Measured on 2026-08-30: a bench unit stayed unreachable for about 90 minutes of continuous
+retries, and none of the obvious remedies helped. A battery power cycle did not (it boots,
+re-attaches and settles straight back into slow poll). Repeated button presses did not.
+A full ZHA reload did not: twenty writes fired during the window immediately afterwards all
+failed.
+
+Throughout all of that the device was healthy and talking: polling normally, LQI 199, its
+button presses arriving at the coordinator without trouble. Uplink is fine. It can talk, it
+just cannot listen.
+
+**Recovery is over BLE, not Zigbee.** Hold the button about 10 seconds for BLE pairing, send
+command `0x01` (radar restart, which also sets the awake bit), then hold about 15 seconds to
+rejoin Zigbee. The vendor app's own presence toggle does the same job. Both work because BLE
+does not depend on the poll cycle.
+
+**So: turn Presence monitoring back on before changing any other setting, and think of
+switching it off as the last thing you do to a device** rather than something to toggle
+while experimenting. It is not destructive and nothing is lost, but getting back in needs
+physical access.
 
 ## Known issue: writes work, but Home Assistant reports them as failed
 
