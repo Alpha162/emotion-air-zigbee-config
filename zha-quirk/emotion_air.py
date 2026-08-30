@@ -92,6 +92,8 @@ practical limit). Rename any of them in the HA UI if you prefer something else.
 import zigpy.types as t
 from zigpy.quirks import CustomCluster
 from zigpy.quirks.v2.homeassistant import UnitOfTime
+from zigpy.zcl import ClusterType
+from zigpy.zcl.clusters.general import OnOff
 from zigpy.zcl.clusters.measurement import OccupancySensing
 from zigpy.zcl.foundation import (Status, WriteAttributesStatusRecord,
                                   ZCLAttributeDef)
@@ -446,6 +448,26 @@ MIN_PATCHED_FW = 0x101A3001
     .prevent_default_entity_creation(
         cluster_id=EmotionAirOccupancyCluster.cluster_id,
         unique_id_suffix="pir_o_to_u_delay",
+    )
+    # The button sends a ZCL On/Off Toggle, and 0x0006 is an OUTPUT (client) cluster here,
+    # so the device is a controller rather than something being controlled. ZHA matches its
+    # generic `Opening` binary sensor on exactly that, so the button press surfaces as an
+    # entity called "Opening" that has nothing to do with a door, a window, or the case.
+    #
+    # Rename it in place rather than suppressing it and publishing a replacement. Keeping
+    # ZHA's own entity keeps its unique_id, so upgrading does not strand the old row in the
+    # registry as an unavailable orphan. (Suppress-and-replace was tried first: the
+    # suppression worked, the replacement never appeared, and the result was no entity at
+    # all.) The device class stays `opening`, so the state still reads Open/Closed; there
+    # is no binary-sensor device class that fits a button, and a wrong name is worse than
+    # odd-looking states.
+    .change_entity_metadata(
+        endpoint_id=1,
+        cluster_id=OnOff.cluster_id,
+        cluster_type=ClusterType.Client,
+        new_translation_key="emotion_air_button",
+        new_fallback_name="Button",
+        new_entity_category=EntityType.DIAGNOSTIC,
     )
     # ---- detection settings ---------------------------------------------------
     # AT+TRITH is a trigger THRESHOLD, so it runs OPPOSITE to the vendor app's

@@ -347,8 +347,10 @@ enforces, using independent code from the builder.
    > python3 -c "from zigpy.config import SCHEMA_OTA; SCHEMA_OTA({'extra_providers':[{'type':'advanced','warning':open('warning.txt').read().strip(),'path':'/config/zigpy_ota/'}]}); print('ok')"
    > ```
 
-3. Copy `zha-quirk/emotion_air.py` to `/config/zha_quirks/`, then restart Home Assistant.
-   A quirk change needs a full restart; re-adding the device is not enough.
+3. Copy `zha-quirk/emotion_air.py` to `/config/zha_quirks/`, then reload ZHA. Calling
+   `homeassistant.reload_config_entry` on the ZHA config entry is enough and takes a few
+   seconds; a full Home Assistant restart also works but is not necessary. Re-adding the
+   device is not enough, and neither is reloading anything else.
 4. Trigger the update from the device's firmware entity.
 5. Check it took, on the device page:
 
