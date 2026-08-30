@@ -159,6 +159,13 @@ by the patched firmware itself and cannot be reached through the quirk at all.
 > those registry rows when you delete a ZHA device, so entities you already had come back
 > with their previous state. "Disabled by default" only takes effect on a genuinely fresh
 > install; on an existing one, disable the buttons by hand once.
+>
+> Renaming behaves differently depending on how you apply it. Reloading the ZHA config
+> entry changes an entity's display name but leaves its `entity_id` alone, so a renamed
+> entity keeps its old id. A "rebuild entities" on the device regenerates them, and the
+> `entity_id` follows the new name. Both were observed on the same rename: a reload left
+> `binary_sensor.<device>_opening` showing the name "Button", and a rebuild turned it into
+> `binary_sensor.<device>_button` with no orphan left behind.
 
 ## Changes can take minutes to arrive
 
@@ -239,20 +246,27 @@ The switch that turns the radar back on is itself a write to the device, so **yo
 undo it from ZHA**. Nothing else in the integration reaches it either, because reads are
 downlink too.
 
-Measured on 2026-08-30: a bench unit stayed unreachable for about 90 minutes of continuous
-retries, and none of the obvious remedies helped. A battery power cycle did not (it boots,
-re-attaches and settles straight back into slow poll). Repeated button presses did not.
-A full ZHA reload did not: twenty writes fired during the window immediately afterwards all
-failed.
+Measured on 2026-08-30: a bench unit stayed unreachable for about 90 minutes. Repeated
+button presses did not help, and neither did a full ZHA reload, with twenty writes fired
+during the window straight afterwards all failing. One battery power cycle also failed to
+restore it, which is what makes this worth writing down: the obvious fix does not always
+take on the first go.
 
 Throughout all of that the device was healthy and talking: polling normally, LQI 199, its
 button presses arriving at the coordinator without trouble. Uplink is fine. It can talk, it
 just cannot listen.
 
-**Recovery is over BLE, not Zigbee.** Hold the button about 10 seconds for BLE pairing, send
-command `0x01` (radar restart, which also sets the awake bit), then hold about 15 seconds to
-rejoin Zigbee. The vendor app's own presence toggle does the same job. Both work because BLE
-does not depend on the poll cycle.
+**A power cycle does recover it, given persistence.** A second cycle, together with a ZHA
+"rebuild entities" on the device, brought it back: presence monitoring switched on, the
+awake bit read back as 1, and reads started succeeding again. Those two actions were taken
+together and we did not isolate which mattered, so the honest advice is to cycle the device
+while a write is pending, since a fresh boot gives a brief fast-poll window and something
+needs to be queued to use it.
+
+**BLE is the guaranteed route** if cycling will not take. Hold the button about 10 seconds
+for BLE pairing, send command `0x01` (radar restart, which also sets the awake bit), then
+hold about 15 seconds to rejoin Zigbee. The vendor app's own presence toggle does the same
+job. Both work because BLE does not depend on the poll cycle at all.
 
 **So: turn Presence monitoring back on before changing any other setting, and think of
 switching it off as the last thing you do to a device** rather than something to toggle
