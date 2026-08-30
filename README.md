@@ -75,7 +75,7 @@ quirk's docstring. Rename anything you like in the HA UI.
 | Light interval | (no radar command) | Lower means fresher readings and more battery. The firmware clamps anything below 2 s |
 | Climate interval | (no radar command) | Same trade-off, clamped below 10 s |
 | Light normal, Light bright | one command for both | The lux boundaries the device reports against. A single device command sets the pair, so the quirk composes them. Bright 11 to 60000 lx, normal below it. The vendor app's bright slider runs to 60000 lx with no text entry, which makes precise values nearly impossible; the ranges here are the same but typeable |
-| Presence monitoring | on `AT+RESET`, off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes |
+| Presence monitoring | on `AT+RESET`, off `AT+SLEEP` | Powers the radar down entirely. No single toggle exists, hence two opcodes. Off also freezes the occupancy sensor, see below |
 | Radar frequency | `AT+FREQ=<0..4>` | Meaning unknown, so disabled by default. Probably an RF channel, see below |
 | Learn room | `AT+CALI=<n>` | The calibration scan, run with the room empty. Uses the Calibration passes value, default 9 |
 | Restore calibration | `AT+INITTH` | The app's "Restore". Measured to change nothing (see below), so do not rely on it to undo a scan |
@@ -159,6 +159,59 @@ by the patched firmware itself and cannot be reached through the quirk at all.
 > those registry rows when you delete a ZHA device, so entities you already had come back
 > with their previous state. "Disabled by default" only takes effect on a genuinely fresh
 > install; on an existing one, disable the buttons by hand once.
+
+## Changes can take minutes to arrive
+
+This is a battery-powered sleepy end device. It does not listen continuously; it wakes on
+its own schedule and polls the coordinator for anything queued. ZHA cannot push a setting
+to it, only leave one waiting. Observed poll gaps on an idle unit are two to four minutes,
+so that is how long a change can sit before it lands.
+
+Two things shorten the wait. Motion is the usual one: the device reports and polls quickly
+while the radar is seeing something, so walking in front of it gets a write delivered.
+
+A short press of the button also works, and is the better option when the radar is asleep
+and motion is not available. The press sends a ZCL On/Off Toggle, so the device transmits,
+and a queued command can go out on the back of it. Observed on 2026-08-30: a write that had
+been queued for about 13 minutes was delivered 32 seconds after a button press. That is
+correlation rather than proof, but after 13 minutes of nothing it is hard to read as
+coincidence.
+
+That leads to one ordering trap worth knowing:
+
+> Change **Presence monitoring** last. Turning it off puts the radar to sleep, which
+> removes the motion that keeps the device polling quickly. Any setting you change
+> afterwards will be waiting on the slow poll instead, which looks exactly like a write
+> that failed.
+
+Finally, a client-side timeout is not a failed write. The value is still queued and will
+land. Judge a change by reading it back, not by how the write call returned.
+
+## Presence monitoring freezes the occupancy sensor
+
+Turning Presence monitoring off sends `AT+SLEEP` and the radar stops. Nothing then reports
+presence either way, so **the occupancy sensor freezes at whatever it last held** rather
+than falling back to clear.
+
+Measured on 2026-08-30: a unit that was occupied when monitoring was switched off held
+`on` for the entire watch with the sensor moved away and facing away, while its `last_seen`
+kept advancing and its humidity reading changed. The device was talking throughout, so it
+was the radar that was off, not the link. With the radar asleep there is no mechanism for
+that value to clear.
+
+The consequence is worth thinking about before you use the switch: an automation along the
+lines of "turn the lights off when the room is empty" will never fire again, because the
+room never becomes empty as far as Home Assistant is concerned. Switching the radar off
+does not mean "no presence", it means "no more news about presence".
+
+To leave it in a sensible state, cycle it in the right order: turn Presence monitoring on,
+wait for occupancy to report clear, and only then turn it off. The frozen value is whatever
+the radar last reported, so make sure that value is the one you want.
+
+Verified on 2026-08-30 on a unit that had latched `on`. Waking the radar took about three
+minutes of queued retries, occupancy cleared roughly five minutes after the radar came back,
+and switching monitoring off then froze it at `off`, where it stayed. Budget ten minutes for
+the whole cycle, most of it waiting on the poll.
 
 ## Known issue: writes work, but Home Assistant reports them as failed
 
