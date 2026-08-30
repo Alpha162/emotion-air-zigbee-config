@@ -187,6 +187,14 @@ That leads to one ordering trap worth knowing:
 Finally, a client-side timeout is not a failed write. The value is still queued and will
 land. Judge a change by reading it back, not by how the write call returned.
 
+The same caution applies to reads, and it is easier to get caught by. The first read after
+a quiet period absorbs the wake-up and times out, while everything after it succeeds
+because the device is then polling. Read a batch of attributes cold and the first one in
+the list looks broken and the rest look fine, which is a very convincing impression of a
+single faulty attribute. It cost us a wrong bug report. Warm up with a throwaway read until
+one succeeds, then interleave known-good attributes with whatever you are testing. A single
+cold read proves nothing in either direction.
+
 ## Presence monitoring freezes the occupancy sensor
 
 Turning Presence monitoring off sends `AT+SLEEP` and the radar stops. Nothing then reports
